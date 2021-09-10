@@ -244,3 +244,9 @@ __pycache__/
 *.egg-info/
 .cache/
 /log*
+
+# Kifu directory
+*.tar.gz
+
+# deb file for docker
+*.deb

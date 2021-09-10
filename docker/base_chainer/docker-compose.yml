@@ -1,0 +1,8 @@
+version: "2.3"
+services:
+  base_chainer:
+    runtime: nvidia
+    stdin_open: true
+    tty: true
+    build:
+      context: .

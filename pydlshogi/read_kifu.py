@@ -1,15 +1,18 @@
 ﻿import shogi
 import shogi.CSA
 import copy
+import os
 
 from pydlshogi.features import *
 
 # read kifu
-def read_kifu(kifu_list_file):
+def read_kifu(kifu_list_file,root=None):
     positions = []
     with open(kifu_list_file, 'r') as f:
         for line in f.readlines():
             filepath = line.rstrip('\r\n')
+            if root is not None:
+                filepath = os.path.join(root,filepath)
             kifu = shogi.CSA.Parser.parse_file(filepath)[0]
             win_color = shogi.BLACK if kifu['win'] == 'b' else shogi.WHITE
             board = shogi.Board()

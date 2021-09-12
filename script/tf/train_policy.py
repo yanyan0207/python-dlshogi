@@ -1,4 +1,4 @@
-﻿import numpy as np
+import numpy as np
 
 from pydlshogi.common import *
 from pydlshogi.time_log import TimeLog
@@ -17,7 +17,9 @@ import pickle
 import os
 import sys
 from pathlib import Path
+from pydlshogi import kifulist
 
+from hurry.filesize import size
 import logging
 
 
@@ -35,12 +37,12 @@ class BiasLayer(tf.keras.layers.Layer):
         return x + self.bias
 
 
-def createModel():
+def createModel(blocks):
     ch = 192
     inputs = keras.Input(shape=(9, 9, 104), name="digits")
     x = Conv2D(ch, kernel_size=(3, 3),
                activation='relu', padding='same')(inputs)
-    for i in range(11):
+    for i in range(blocks):
         x = Conv2D(ch, kernel_size=(3, 3),
                    activation='relu', padding='same')(x)
     x = Conv2D(27, kernel_size=(1, 1),
@@ -87,10 +89,9 @@ def mini_batch_for_test(positions, batchsize):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('kifulist_train', type=str, help='train kifu list')
-    parser.add_argument('kifulist_test', type=str, help='test kifu list')
+    parser = kifulist.add_argument_for_train(parser)
     parser.add_argument('--kifulist_root')
-    parser.add_argument('--blocks', type=int, default=5,
+    parser.add_argument('--blocks', type=int, default=11,
                         help='Number of resnet blocks')
     parser.add_argument('--batchsize', '-b', type=int, default=32,
                         help='Number of positions in each mini-batch')
@@ -99,15 +100,16 @@ if __name__ == "__main__":
     parser.add_argument('--epoch', '-e', type=int,
                         default=1, help='Number of epoch times')
     parser.add_argument(
-        '--model', type=str, default='model/model_policy', help='model file name')
+        '--model', type=str, default='model/model_policy_tf', help='model file name')
     parser.add_argument('--initmodel', '-m', default='',
                         help='Initialize the model from given file')
     parser.add_argument('--log', default=None, help='log file path')
     parser.add_argument('--lr', type=float, default=0.01, help='learning rate')
     parser.add_argument('--eval_interval', '-i', type=int,
                         default=1000, help='eval interval')
+    parser.add_argument('--train_loop', action='store_true')
     args = parser.parse_args()
-    epochs = 2
+    epochs = args.epoch
     batchsize = args.batchsize
     lr = args.lr
     eval_interval = args.eval_interval
@@ -118,35 +120,37 @@ if __name__ == "__main__":
                         datefmt='%Y/%m/%d %H:%M:%S', filename=args.log, level=logging.DEBUG)
 
     logger = logging.getLogger()
-    if args.log is None:
-        handler = logging.StreamHandler(sys.stdout)
-        logger.addHandler(handler)
-
     logger.info('read kifu start')
+    # 訓練用とテスト用の棋譜リストを取得
+    df_kifulist_train, df_kifulist_test = kifulist.load_kifulist(args)
+    logger.info(f'train:{df_kifulist_train.describe()}')
+    logger.info(f'test:{df_kifulist_test.describe()}')
+
     # 保存済みのpickleファイルがある場合、pickleファイルを読み込む
     # train date
     time_kifulist_train = TimeLog('kifulist_train')
     time_kifulist_train.start()
-    train_pickle_filename = f"{Path(args.kifulist_train).stem}.pickle"
+    train_pickle_filename = f"{Path(args.train_kifu_list).stem}.pickle"
     if os.path.exists(train_pickle_filename):
         with open(train_pickle_filename, 'rb') as f:
             positions_train = pickle.load(f)
         logger.info('load train pickle')
     else:
-        positions_train = read_kifu(
-            args.kifulist_train, root=args.kifulist_root)
+        positions_train = read_kifu_array(
+            df_kifulist_train.index, root=args.kifulist_root)
     time_kifulist_train.end()
 
     # test data
     time_kifulist_test = TimeLog('kifulist_test')
     time_kifulist_test.start()
-    test_pickle_filename = f"{Path(args.kifulist_test).stem}.pickle"
+    test_pickle_filename = f"{Path(args.test_kifu_list).stem}.pickle"
     if os.path.exists(test_pickle_filename):
         with open(test_pickle_filename, 'rb') as f:
             positions_test = pickle.load(f)
         logger.info('load test pickle')
     else:
-        positions_test = read_kifu(args.kifulist_test, root=args.kifulist_root)
+        positions_test = read_kifu_array(
+            df_kifulist_test.index, root=args.kifulist_root)
     time_kifulist_test.end()
 
     # 保存済みのpickleがない場合、pickleファイルを保存する
@@ -174,7 +178,7 @@ if __name__ == "__main__":
 
     logger.info('start training')
 
-    model = createModel()
+    model = createModel(args.blocks)
     model_summary = []
     model.summary(
         print_fn=lambda x: model_summary.append(x))
@@ -184,93 +188,120 @@ if __name__ == "__main__":
     if initmodel:
         logging.info('Load model from {}'.format(args.initmodel))
         keras.models.load_model("initmodel")
+
+    # train
+    logger.info('start training')
+
     # Instantiate an optimizer.
     optimizer = keras.optimizers.SGD(learning_rate=lr)
 
     # Instantiate a loss function.
     loss_fn = keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 
-    # Prepare the metrics.
-    train_acc_metric = keras.metrics.SparseCategoricalAccuracy()
-    val_acc_metric = keras.metrics.SparseCategoricalAccuracy()
+    if not args.train_loop:
+        time_mini_batch.start()
+        x_train, t1_train, t2_train = mini_batch(
+            positions_train, 0, len(positions_train))
+        time_mini_batch.end()
+        logger.info(f'x_train num = {x_train.shape[0]}')
+        logger.info(f'x_train bytessize = {size(x_train.nbytes)}')
 
-    # train
-    logger.info('start training')
-    for e in range(epochs):
-        logger.info("\nStart of epoch %d" % (e+1,))
+        time_val_mini_batch.start()
+        x_test, t1_test, t2_test = mini_batch(
+            positions_test, 0, len(positions_test))
+        time_val_mini_batch.end()
+        logger.info(f'x_test num = {x_test.shape[0]}')
+        logger.info(f'x_test bytessize = {size(x_test.nbytes)}')
 
-        positions_train_shuffled = random.sample(
-            positions_train, len(positions_train))
+        time_train.start()
+        model.compile(optimizer=optimizer, loss=loss_fn,
+                      metrics=['accuracy'])
+        model.fit(x_train, t1_train, epochs=epochs,
+                  batch_size=batchsize, validation_data=(x_test, t1_test), verbose=1)
+        time_train.end()
 
-        sum_loss = []
-        for step, i in enumerate(range(0, len(positions_train_shuffled) - batchsize, batchsize)):
-            time_mini_batch.start()
-            x, t1, t2 = mini_batch(
-                positions_train_shuffled, i, batchsize)
-            time_mini_batch.end()
+        logging.info('save the model')
+        model.save(save_model)
 
-            time_train.start()
-            # Open a GradientTape to record the operations run
-            # during the forward pass, which enables auto-differentiation.
-            with tf.GradientTape() as tape:
+    else:
+        # Prepare the metrics.
+        train_acc_metric = keras.metrics.SparseCategoricalAccuracy()
+        val_acc_metric = keras.metrics.SparseCategoricalAccuracy()
+        for e in range(epochs):
+            logger.info("\nStart of epoch %d" % (e+1,))
 
-                # Run the forward pass of the layer.
-                # The operations that the layer applies
-                # to its inputs are going to be recorded
-                # on the GradientTape.
-                # Logits for this minibatch
-                logits = model(x, training=True)
+            positions_train_shuffled = random.sample(
+                positions_train, len(positions_train))
 
-                # Compute the loss value for this minibatch.
-                loss_value = loss_fn(t1, logits)
+            sum_loss = []
+            for step, i in enumerate(range(0, len(positions_train_shuffled) - batchsize, batchsize)):
+                time_mini_batch.start()
+                x, t1, t2 = mini_batch(
+                    positions_train_shuffled, i, batchsize)
+                time_mini_batch.end()
 
-            # Use the gradient tape to automatically retrieve
-            # the gradients of the trainable variables with respect to the loss.
-            grads = tape.gradient(loss_value, model.trainable_weights)
+                time_train.start()
+                # Open a GradientTape to record the operations run
+                # during the forward pass, which enables auto-differentiation.
+                with tf.GradientTape() as tape:
 
-            # Run one step of gradient descent by updating
-            # the value of the variables to minimize the loss.
-            optimizer.apply_gradients(zip(grads, model.trainable_weights))
+                    # Run the forward pass of the layer.
+                    # The operations that the layer applies
+                    # to its inputs are going to be recorded
+                    # on the GradientTape.
+                    # Logits for this minibatch
+                    logits = model(x, training=True)
 
-            # Update training metric.
-            sum_loss.append(loss_value)
-            train_acc_metric.update_state(t1, logits)
-            time_train.end()
+                    # Compute the loss value for this minibatch.
+                    loss_value = loss_fn(t1, logits)
 
-            # print train loss and test accuracy
-            if (step + 1) % eval_interval == 0:
-                time_val_mini_batch.start()
-                x, t1, t2 = mini_batch_for_test(
-                    positions_test, args.test_batchsize)
-                y1 = model(x, training=False)
-                loss_value = loss_fn(t1, y1)
-                logger.info('epoch = {}, iteration = {}, loss = {}, accuracy = {}'.format(
-                    e + 1, step + 1, np.average(sum_loss),
-                    np.sum(np.sum(np.argmax(y1, axis=1) == t1)) / len(t1)))
-                sum_loss = []
-                time_val_mini_batch.end()
+                # Use the gradient tape to automatically retrieve
+                # the gradients of the trainable variables with respect to the loss.
+                grads = tape.gradient(loss_value, model.trainable_weights)
 
-        # Display metrics at the end of each epoch.
-        train_acc = train_acc_metric.result()
-        logger.info("Training acc over epoch: %.4f" % (float(train_acc),))
+                # Run one step of gradient descent by updating
+                # the value of the variables to minimize the loss.
+                optimizer.apply_gradients(zip(grads, model.trainable_weights))
 
-        # Reset training metrics at the end of each epoch
-        train_acc_metric.reset_states()
+                # Update training metric.
+                sum_loss.append(loss_value)
+                train_acc_metric.update_state(t1, logits)
+                time_train.end()
 
-        time_val_epoch.start()
-        # Run a validation loop at the end of each epoch.
-        for step in range(0, len(positions_test) - batchsize, batchsize):
-            x_batch_val, y_batch_val, _ = mini_batch(
-                positions_test, step, batchsize)
-            val_logits = model(x_batch_val, training=False)
-            # Update val metrics
-            val_acc_metric.update_state(y_batch_val, val_logits)
-        val_acc = val_acc_metric.result()
-        val_acc_metric.reset_states()
-        logger.info("Validation acc: %.4f" % (float(val_acc),))
-        time_val_epoch.end()
+                # print train loss and test accuracy
+                if (step + 1) % eval_interval == 0:
+                    time_val_mini_batch.start()
+                    x, t1, t2 = mini_batch_for_test(
+                        positions_test, args.test_batchsize)
+                    y1 = model(x, training=False)
+                    loss_value = loss_fn(t1, y1)
+                    logger.info('epoch = {}, iteration = {}, loss = {}, accuracy = {}'.format(
+                        e + 1, step + 1, np.average(sum_loss),
+                        np.sum(np.sum(np.argmax(y1, axis=1) == t1)) / len(t1)))
+                    sum_loss = []
+                    time_val_mini_batch.end()
 
-    logging.info('save the model')
-    model.save(save_model)
+            # Display metrics at the end of each epoch.
+            train_acc = train_acc_metric.result()
+            logger.info("Training acc over epoch: %.4f" % (float(train_acc),))
+
+            # Reset training metrics at the end of each epoch
+            train_acc_metric.reset_states()
+
+            time_val_epoch.start()
+            # Run a validation loop at the end of each epoch.
+            for step in range(0, len(positions_test) - batchsize, batchsize):
+                x_batch_val, y_batch_val, _ = mini_batch(
+                    positions_test, step, batchsize)
+                val_logits = model(x_batch_val, training=False)
+                # Update val metrics
+                val_acc_metric.update_state(y_batch_val, val_logits)
+            val_acc = val_acc_metric.result()
+            val_acc_metric.reset_states()
+            logger.info("Validation acc: %.4f" % (float(val_acc),))
+            time_val_epoch.end()
+
+        logging.info('save the model')
+        model.save(save_model)
 
     logger.info(TimeLog.debug())

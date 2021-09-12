@@ -1,4 +1,4 @@
-import numpy as np
+﻿import numpy as np
 
 from pydlshogi.common import *
 from pydlshogi.time_log import TimeLog
@@ -21,6 +21,7 @@ from pydlshogi import kifulist
 
 from hurry.filesize import size
 import logging
+from memory_profiler import profile
 
 
 class BiasLayer(tf.keras.layers.Layer):
@@ -58,33 +59,24 @@ def createModel(blocks):
 
 
 def mini_batch(positions, i, batchsize):
-    mini_batch_data = []
-    mini_batch_move = []
-    mini_batch_win = []
-    for b in range(batchsize):
-        features, move, win = make_features(positions[i + b])
-        mini_batch_data.append(features)
-        mini_batch_move.append(move)
-        mini_batch_win.append(win)
+    single_board_list, move_list, win_list = zip(*positions[i: i+batchsize])
+    mini_batch_data = make_input_features_from_single_board_list(
+        single_board_list)
+    mini_batch_move = np.asarray(move_list, dtype=np.int16)
+    mini_batch_win = np.asarray(win_list, dtype=np.float16)
 
-    return (np.array(mini_batch_data, dtype=np.float32).transpose(0, 2, 3, 1),
-            np.array(mini_batch_move, dtype=np.int32),
-            np.array(mini_batch_win, dtype=np.int32).reshape((-1, 1)))
+    return (mini_batch_data, mini_batch_move, mini_batch_win)
 
 
 def mini_batch_for_test(positions, batchsize):
-    mini_batch_data = []
-    mini_batch_move = []
-    mini_batch_win = []
-    for b in range(batchsize):
-        features, move, win = make_features(random.choice(positions))
-        mini_batch_data.append(features)
-        mini_batch_move.append(move)
-        mini_batch_win.append(win)
+    i = random.randint(0, max(0, len(positions) - batchsize))
+    sigle_board_list, move_list, win_list = zip(*positions[i:i+batchsize])
+    mini_batch_data = make_input_features_from_single_board_list(
+        sigle_board_list)
+    mini_batch_move = np.asarray(move_list, dtype=np.int16)
+    mini_batch_win = np.asarray(win_list, dtype=np.float16)
 
-    return (np.array(mini_batch_data, dtype=np.float32).transpose(0, 2, 3, 1),
-            np.array(mini_batch_move, dtype=np.int32),
-            np.array(mini_batch_win, dtype=np.int32).reshape((-1, 1)))
+    return (mini_batch_data, mini_batch_move, mini_batch_win)
 
 
 if __name__ == "__main__":
@@ -138,6 +130,7 @@ if __name__ == "__main__":
     else:
         positions_train = read_kifu_array(
             df_kifulist_train.index, root=args.kifulist_root)
+        positions_train = posions_to_single_board(positions_train)
     time_kifulist_train.end()
 
     # test data
@@ -151,6 +144,7 @@ if __name__ == "__main__":
     else:
         positions_test = read_kifu_array(
             df_kifulist_test.index, root=args.kifulist_root)
+        positions_test = posions_to_single_board(positions_test)
     time_kifulist_test.end()
 
     # 保存済みのpickleがない場合、pickleファイルを保存する
@@ -167,8 +161,10 @@ if __name__ == "__main__":
     logger.info('read kifu end')
     time_pickle.end()
 
-    logger.info('train position num = {}'.format(len(positions_train)))
-    logger.info('test position num = {}'.format(len(positions_test)))
+    train_num = len(positions_train)
+    test_num = len(positions_test)
+    logger.info('train position num = {}'.format(train_num))
+    logger.info('test position num = {}'.format(test_num))
 
     # train
     time_mini_batch = TimeLog("mini_batch")
@@ -201,16 +197,16 @@ if __name__ == "__main__":
     if not args.train_loop:
         time_mini_batch.start()
         x_train, t1_train, t2_train = mini_batch(
-            positions_train, 0, len(positions_train))
+            positions_train, 0, train_num)
         time_mini_batch.end()
-        logger.info(f'x_train num = {x_train.shape[0]}')
+        logger.info(f'x_train num = {train_num}')
         logger.info(f'x_train bytessize = {size(x_train.nbytes)}')
 
         time_val_mini_batch.start()
         x_test, t1_test, t2_test = mini_batch(
-            positions_test, 0, len(positions_test))
+            positions_test, 0, test_num)
         time_val_mini_batch.end()
-        logger.info(f'x_test num = {x_test.shape[0]}')
+        logger.info(f'x_test num = {test_num}')
         logger.info(f'x_test bytessize = {size(x_test.nbytes)}')
 
         time_train.start()
@@ -231,10 +227,10 @@ if __name__ == "__main__":
             logger.info("\nStart of epoch %d" % (e+1,))
 
             positions_train_shuffled = random.sample(
-                positions_train, len(positions_train))
+                positions_train, train_num)
 
             sum_loss = []
-            for step, i in enumerate(range(0, len(positions_train_shuffled) - batchsize, batchsize)):
+            for step, i in enumerate(range(0, train_num - batchsize, batchsize)):
                 time_mini_batch.start()
                 x, t1, t2 = mini_batch(
                     positions_train_shuffled, i, batchsize)
@@ -290,7 +286,7 @@ if __name__ == "__main__":
 
             time_val_epoch.start()
             # Run a validation loop at the end of each epoch.
-            for step in range(0, len(positions_test) - batchsize, batchsize):
+            for step in range(0, test_num - batchsize, batchsize):
                 x_batch_val, y_batch_val, _ = mini_batch(
                     positions_test, step, batchsize)
                 val_logits = model(x_batch_val, training=False)
@@ -304,4 +300,4 @@ if __name__ == "__main__":
         logging.info('save the model')
         model.save(save_model)
 
-    logger.info(TimeLog.debug())
+    logger.info(f'\n{TimeLog.debug()}')

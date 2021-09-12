@@ -1,43 +1,112 @@
 ﻿import numpy as np
 import shogi
 import copy
+import sys
 
+from shogi.Consts import BLACK
 from pydlshogi.common import *
+from pydlshogi.time_log import *
+
+time_board_pieces = TimeLog("borad pieces")
+time_pieces_in_hand = TimeLog("pieces in hand")
+
+
+def posions_to_single_board(positions):
+    return [posion_to_single_board(position) for position in positions]
+
+
+def posion_to_single_board(position):
+    piece_bb, occupied, pieces_in_hand, move, win = position
+    single_board_and_piece_in_hand = np.zeros(9*9 + 7*2, dtype=np.int8)
+
+    for color in shogi.COLORS:
+        # board pieces
+        time_board_pieces.start()
+        for piece_type in shogi.PIECE_TYPES_WITH_NONE[1:]:
+            bb = piece_bb[piece_type] & occupied[color]
+            feature = np.zeros(9*9, dtype=np.int8)
+            for pos in shogi.SQUARES:
+                if bb & shogi.BB_SQUARES[pos] > 0:
+                    single_board_and_piece_in_hand[pos] = piece_type * \
+                        (1 if color == shogi.BLACK else -1)
+    idx = 81
+    for color in shogi.COLORS:
+        # pieces in hand
+        for piece_type in range(1, 8):
+            for n in range(shogi.MAX_PIECES_IN_HAND[piece_type]):
+                if piece_type in pieces_in_hand[color]:
+                    single_board_and_piece_in_hand[idx] = pieces_in_hand[color][piece_type]
+            idx += 1
+
+    return single_board_and_piece_in_hand, move, win
+
+
+def make_input_features_from_single_board_list(single_board_list):
+    single_board_list = np.asarray(single_board_list, dtype=np.int8)
+    sample_num = single_board_list.shape[0]
+    features = np.zeros(
+        (sample_num, 81, (14+18+4+4+4+4+2+2)*2), dtype=np.int8)
+
+    idx = 0
+    in_hand_idx = 81
+    for color in shogi.COLORS:
+        # board pieces
+        for piece_type in shogi.PIECE_TYPES_WITH_NONE[1:]:
+            features[:, :, idx][single_board_list[:, :81] ==
+                                piece_type * (1 if color == shogi.BLACK else -1)] = 1
+            idx += 1
+        # pieces in hand
+        for piece_type in range(1, 8):
+            for n in range(shogi.MAX_PIECES_IN_HAND[piece_type]):
+                features[:, :, idx][n < single_board_list[:, in_hand_idx]] = 1
+                idx += 1
+            in_hand_idx += 1
+    return features.reshape(sample_num, 9, 9, 104)
+
 
 def make_input_features(piece_bb, occupied, pieces_in_hand):
     features = []
     for color in shogi.COLORS:
         # board pieces
+        time_board_pieces.start()
         for piece_type in shogi.PIECE_TYPES_WITH_NONE[1:]:
             bb = piece_bb[piece_type] & occupied[color]
-            feature = np.zeros(9*9)
+            feature = np.zeros(9*9, dtype=np.int8)
             for pos in shogi.SQUARES:
                 if bb & shogi.BB_SQUARES[pos] > 0:
                     feature[pos] = 1
             features.append(feature.reshape((9, 9)))
+        time_board_pieces.end()
 
         # pieces in hand
+        time_pieces_in_hand.start()
         for piece_type in range(1, 8):
             for n in range(shogi.MAX_PIECES_IN_HAND[piece_type]):
                 if piece_type in pieces_in_hand[color] and n < pieces_in_hand[color][piece_type]:
-                    feature = np.ones(9*9)
+                    feature = np.ones(9*9, dtype=np.int8)
                 else:
-                    feature = np.zeros(9*9)
+                    feature = np.zeros(9*9, dtype=np.int8)
                 features.append(feature.reshape((9, 9)))
+        time_pieces_in_hand.end()
 
     return features
+
 
 def make_input_features_from_board(board):
     if board.turn == shogi.BLACK:
         piece_bb = board.piece_bb
         occupied = (board.occupied[shogi.BLACK], board.occupied[shogi.WHITE])
-        pieces_in_hand = (board.pieces_in_hand[shogi.BLACK], board.pieces_in_hand[shogi.WHITE])
+        pieces_in_hand = (
+            board.pieces_in_hand[shogi.BLACK], board.pieces_in_hand[shogi.WHITE])
     else:
         piece_bb = [bb_rotate_180(bb) for bb in board.piece_bb]
-        occupied = (bb_rotate_180(board.occupied[shogi.WHITE]), bb_rotate_180(board.occupied[shogi.BLACK]))
-        pieces_in_hand = (board.pieces_in_hand[shogi.WHITE], board.pieces_in_hand[shogi.BLACK])
+        occupied = (bb_rotate_180(board.occupied[shogi.WHITE]), bb_rotate_180(
+            board.occupied[shogi.BLACK]))
+        pieces_in_hand = (
+            board.pieces_in_hand[shogi.WHITE], board.pieces_in_hand[shogi.BLACK])
 
     return make_input_features(piece_bb, occupied, pieces_in_hand)
+
 
 def make_output_label(move, color):
     move_to = move.to_square
@@ -86,6 +155,7 @@ def make_output_label(move, color):
     move_label = 9 * 9 * move_direction + move_to
 
     return move_label
+
 
 def make_features(position):
     piece_bb, occupied, pieces_in_hand, move, win = position

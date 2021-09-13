@@ -2,6 +2,7 @@
 import shogi
 import copy
 import sys
+import pandas as pd
 
 from shogi.Consts import BLACK
 from pydlshogi.common import *
@@ -9,6 +10,58 @@ from pydlshogi.time_log import *
 
 time_board_pieces = TimeLog("borad pieces")
 time_pieces_in_hand = TimeLog("pieces in hand")
+
+
+def add_argument_for_train(parser):
+    parser.add_argument('train_position_list', help='train_position_list')
+    parser.add_argument('test_position_list', help='test_position_list')
+    parser.add_argument('--min_rate', type=float, help='min rate')
+    parser.add_argument('--train_min_rate', type=float, help='train min rate')
+    parser.add_argument('--test_min_rate', type=float, help='test min rate')
+    parser.add_argument('--min_move_num', type=int, help='min move num')
+    parser.add_argument('--train_max_num', type=int, help='train max num')
+    parser.add_argument('--test_max_num', type=int, help='test max num')
+    return parser
+
+
+def load_positionlist(args):
+    dtypes = {'file_index': np.int32, 'A_black_rate': np.int16,
+              'A_white_rate': np.int16, 'A_move_num': np.int16, 'F_current_movenum': np.int16}
+    for i in range(9*9):
+        dtypes[f'F_pos{i//9+1}{i%9+1}'] = np.int8
+    for koma in ['fu', 'ky', 'ke', 'gi', 'ki', 'ka', 'hi']:
+        dtypes[f'F_b{koma}'] = np.int8
+        dtypes[f'F_w{koma}'] = np.int8
+    dtypes['L_hand'] = np.int16
+    dtypes['L_win'] = np.int8
+
+    # レートでフィルタリング
+    train_min_rate = args.train_min_rate if args.train_min_rate is not None else args.min_rate
+    test_min_rate = args.test_min_rate if args.test_min_rate is not None else args.min_rate
+
+    df_list = []
+    for position_list, min_rate, max_num in [
+        (args.train_position_list, train_min_rate, args.train_max_num),
+            (args.test_position_list, test_min_rate, args.test_max_num)]:
+        df = pd.read_csv(position_list, index_col=0, dtype=dtypes)
+
+        # 両プレーヤーの低い方のレートを計算
+        df['both_min_rate'] = df.loc[:, [
+            'A_black_rate', 'A_white_rate']].min(axis=1)
+
+        if min_rate is not None:
+            df = df[df.both_min_rate >= min_rate]
+
+        # 手数でフィルタリング
+        if args.min_move_num:
+            df = df[df.A_move_num >= args.min_move_num]
+
+        # 最大数が設定されている時はレートの高い方からフィルタリング
+        if max_num:
+            df = df.nlargest(max_num, 'both_min_rate')
+
+        df_list.append(df)
+    return df_list
 
 
 def posions_to_single_board(positions):

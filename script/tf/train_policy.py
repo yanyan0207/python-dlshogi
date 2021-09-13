@@ -17,7 +17,6 @@ import pickle
 import os
 import sys
 from pathlib import Path
-from pydlshogi import kifulist
 
 from hurry.filesize import size
 import logging
@@ -55,33 +54,10 @@ def createModel(blocks):
     model = keras.Model(inputs=inputs, outputs=outputs)
     return model
 
-# mini batch
-
-
-def mini_batch(positions, i, batchsize):
-    single_board_list, move_list, win_list = zip(*positions[i: i+batchsize])
-    mini_batch_data = make_input_features_from_single_board_list(
-        single_board_list)
-    mini_batch_move = np.asarray(move_list, dtype=np.int16)
-    mini_batch_win = np.asarray(win_list, dtype=np.float16)
-
-    return (mini_batch_data, mini_batch_move, mini_batch_win)
-
-
-def mini_batch_for_test(positions, batchsize):
-    i = random.randint(0, max(0, len(positions) - batchsize))
-    sigle_board_list, move_list, win_list = zip(*positions[i:i+batchsize])
-    mini_batch_data = make_input_features_from_single_board_list(
-        sigle_board_list)
-    mini_batch_move = np.asarray(move_list, dtype=np.int16)
-    mini_batch_win = np.asarray(win_list, dtype=np.float16)
-
-    return (mini_batch_data, mini_batch_move, mini_batch_win)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser = kifulist.add_argument_for_train(parser)
+    parser = add_argument_for_train(parser)
     parser.add_argument('--kifulist_root')
     parser.add_argument('--blocks', type=int, default=11,
                         help='Number of resnet blocks')
@@ -114,55 +90,22 @@ if __name__ == "__main__":
     logger = logging.getLogger()
     logger.info('read kifu start')
     # 訓練用とテスト用の棋譜リストを取得
-    df_kifulist_train, df_kifulist_test = kifulist.load_kifulist(args)
-    logger.info(f'train:{df_kifulist_train.describe()}')
-    logger.info(f'test:{df_kifulist_test.describe()}')
+    df_positionlist_train, df_positionlist_test = load_positionlist(args)
+    logger.info(f'train:{df_positionlist_train.describe()}')
+    logger.info(f'test:{df_positionlist_test.describe()}')
 
-    # 保存済みのpickleファイルがある場合、pickleファイルを読み込む
-    # train date
-    time_kifulist_train = TimeLog('kifulist_train')
-    time_kifulist_train.start()
-    train_pickle_filename = f"{Path(args.train_kifu_list).stem}.pickle"
-    if os.path.exists(train_pickle_filename):
-        with open(train_pickle_filename, 'rb') as f:
-            positions_train = pickle.load(f)
-        logger.info('load train pickle')
-    else:
-        positions_train = read_kifu_array(
-            df_kifulist_train.index, root=args.kifulist_root)
-        positions_train = posions_to_single_board(positions_train)
-    time_kifulist_train.end()
+    columns = [c for c in df_positionlist_train.columns if c[:2]
+               == 'F_' and c != 'F_current_movenum']
+    single_board_list_train = df_positionlist_train.loc[:, columns].values
+    move_train = df_positionlist_train['L_hand'].values
+    #win_train = df_positionlist_train['L_win'].values
 
-    # test data
-    time_kifulist_test = TimeLog('kifulist_test')
-    time_kifulist_test.start()
-    test_pickle_filename = f"{Path(args.test_kifu_list).stem}.pickle"
-    if os.path.exists(test_pickle_filename):
-        with open(test_pickle_filename, 'rb') as f:
-            positions_test = pickle.load(f)
-        logger.info('load test pickle')
-    else:
-        positions_test = read_kifu_array(
-            df_kifulist_test.index, root=args.kifulist_root)
-        positions_test = posions_to_single_board(positions_test)
-    time_kifulist_test.end()
+    single_board_list_test = df_positionlist_test.loc[:, columns].values
+    move_test = df_positionlist_test['L_hand'].values
+    #win_test = df_positionlist_test['L_win'].values
 
-    # 保存済みのpickleがない場合、pickleファイルを保存する
-    time_pickle = TimeLog('pickle')
-    time_pickle.start()
-    if not os.path.exists(train_pickle_filename):
-        with open(train_pickle_filename, 'wb') as f:
-            pickle.dump(positions_train, f, pickle.HIGHEST_PROTOCOL)
-        logger.info('save train pickle')
-    if not os.path.exists(test_pickle_filename):
-        with open(test_pickle_filename, 'wb') as f:
-            pickle.dump(positions_test, f, pickle.HIGHEST_PROTOCOL)
-        logger.info('save test pickle')
-    logger.info('read kifu end')
-    time_pickle.end()
-
-    train_num = len(positions_train)
-    test_num = len(positions_test)
+    train_num = len(single_board_list_train)
+    test_num = len(single_board_list_test)
     logger.info('train position num = {}'.format(train_num))
     logger.info('test position num = {}'.format(test_num))
 
@@ -196,15 +139,17 @@ if __name__ == "__main__":
 
     if not args.train_loop:
         time_mini_batch.start()
-        x_train, t1_train, t2_train = mini_batch(
-            positions_train, 0, train_num)
+        x_train = make_input_features_from_single_board_list(
+            single_board_list_train)
+        t1_train = move_train
         time_mini_batch.end()
         logger.info(f'x_train num = {train_num}')
         logger.info(f'x_train bytessize = {size(x_train.nbytes)}')
 
         time_val_mini_batch.start()
-        x_test, t1_test, t2_test = mini_batch(
-            positions_test, 0, test_num)
+        x_test = make_input_features_from_single_board_list(
+            single_board_list_test)
+        t1_test = move_test
         time_val_mini_batch.end()
         logger.info(f'x_test num = {test_num}')
         logger.info(f'x_test bytessize = {size(x_test.nbytes)}')
@@ -226,14 +171,15 @@ if __name__ == "__main__":
         for e in range(epochs):
             logger.info("\nStart of epoch %d" % (e+1,))
 
-            positions_train_shuffled = random.sample(
-                positions_train, train_num)
+            # Todo shuffle
 
             sum_loss = []
             for step, i in enumerate(range(0, train_num - batchsize, batchsize)):
                 time_mini_batch.start()
-                x, t1, t2 = mini_batch(
-                    positions_train_shuffled, i, batchsize)
+                x = make_input_features_from_single_board_list(
+                    single_board_list_train[i:i+batchsize])
+                t1 = move_train[i:i+batchsize]
+                #t2 = win_train[i:i+batchsize]
                 time_mini_batch.end()
 
                 time_train.start()
@@ -267,8 +213,11 @@ if __name__ == "__main__":
                 # print train loss and test accuracy
                 if (step + 1) % eval_interval == 0:
                     time_val_mini_batch.start()
-                    x, t1, t2 = mini_batch_for_test(
-                        positions_test, args.test_batchsize)
+                    randomi = random.randint(0, max(0, test_num - batchsize))
+                    x = make_input_features_from_single_board_list(
+                        single_board_list_test[randomi:randomi+batchsize])
+                    t1 = move_test[randomi:randomi+batchsize]
+                    #t2 = win_test[i:i+batchsize]
                     y1 = model(x, training=False)
                     loss_value = loss_fn(t1, y1)
                     logger.info('epoch = {}, iteration = {}, loss = {}, accuracy = {}'.format(
@@ -287,8 +236,10 @@ if __name__ == "__main__":
             time_val_epoch.start()
             # Run a validation loop at the end of each epoch.
             for step in range(0, test_num - batchsize, batchsize):
-                x_batch_val, y_batch_val, _ = mini_batch(
-                    positions_test, step, batchsize)
+
+                x_batch_val = make_input_features_from_single_board_list(
+                    single_board_list_test[step:step+batchsize])
+                y_batch_val = move_test[step:step+batchsize]
                 val_logits = model(x_batch_val, training=False)
                 # Update val metrics
                 val_acc_metric.update_state(y_batch_val, val_logits)

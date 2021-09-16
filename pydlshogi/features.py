@@ -25,8 +25,8 @@ def add_argument_for_train(parser):
 
 
 def load_positionlist(args):
-    dtypes = {'file_index': np.int32, 'A_black_rate': np.int16,
-              'A_white_rate': np.int16, 'A_move_num': np.int16, 'F_current_movenum': np.int16}
+    dtypes = {'A_black_rate': np.int16, 'A_white_rate': np.int16,
+              'A_move_num': np.int16, 'F_current_movenum': np.int16}
     for i in range(9*9):
         dtypes[f'F_pos{i//9+1}{i%9+1}'] = np.int8
     for koma in ['fu', 'ky', 'ke', 'gi', 'ki', 'ka', 'hi']:

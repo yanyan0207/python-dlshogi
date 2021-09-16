@@ -2,11 +2,11 @@ import argparse
 from pydlshogi.features import posions_to_single_board
 from pydlshogi.read_kifu import read_kifu, read_kifu_single
 import pandas as pd
-import itertools
 from joblib import Parallel, delayed
-from multiprocessing import cpu_count
 import os
 from pathlib import Path
+import tempfile
+import glob
 
 
 def create_feature(index, kifu,  black_rate, white_rate, root, odir, columns):
@@ -32,7 +32,7 @@ def create_feature(index, kifu,  black_rate, white_rate, root, odir, columns):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('kifulist')
-    parser.add_argument('odir')
+    parser.add_argument('ofile')
     parser.add_argument('--kifu_root')
     parser.add_argument('--min_rate', type=float)
     parser.add_argument('--min_move_num', type=int)
@@ -45,7 +45,7 @@ if __name__ == "__main__":
 
     if args.min_rate:
         df_kifulist = df_kifulist[df_kifulist['both_min_rate']
-                                  >= args.both_min_rate]
+                                  >= args.min_rate]
 
     if args.min_move_num:
         df_kifulist = df_kifulist[df_kifulist['move_num'] >= args.min_move_num]
@@ -65,7 +65,24 @@ if __name__ == "__main__":
                    'F_wgi', 'F_wki', 'F_wka', 'F_whi'])
     columns.extend(['L_hand', 'L_win'])
 
-    ofilelist = Parallel(n_jobs=-1)(
-        delayed(create_feature)(idx, filename, int(black_rate),
-                                int(white_rate), args.kifu_root, args.odir, columns)
-        for idx, filename, black_rate, white_rate in zip(df_kifulist.index, df_kifulist.filename, df_kifulist.black_rate, df_kifulist.white_rate))
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # 1局ごとに、1行1手の情報が書かれているCSVを作成
+        ofilelist = Parallel(n_jobs=-1)(
+            delayed(create_feature)(idx, filename, int(black_rate),
+                                    int(white_rate), args.kifu_root, tmpdir, columns)
+            for idx, filename, black_rate, white_rate in zip(df_kifulist.index, df_kifulist.filename, df_kifulist.black_rate, df_kifulist.white_rate))
+
+        # 全てのファイルを連結
+        filelist = sorted(glob.glob(f'{tmpdir}/*.csv'))
+        if len(filelist) == 0:
+            raise RuntimeError("no kifu")
+
+        with open(args.ofile, mode='x') as ofile:
+            # ヘッダ行を書き込む
+            with open(filelist[0]) as f:
+                ofile.write(f.readline())
+
+            # 全ての行を書き込む
+            for path in filelist:
+                with open(path) as f:
+                    ofile.writelines(f.readlines()[1:])

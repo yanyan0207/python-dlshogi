@@ -1,26 +1,23 @@
-﻿import numpy as np
-
-from pydlshogi.common import *
-from pydlshogi.time_log import TimeLog
-from pydlshogi.features import *
-from pydlshogi.read_kifu import *
-
-import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
-from tensorflow.keras.layers import Dense, Activation, Conv2D, Flatten
-from tensorflow.python.keras.layers.core import Permute
-
-import argparse
-import random
-import pickle
-import os
-import sys
+﻿import logging
 from pathlib import Path
+import sys
+import os
+import pickle
+import random
+import argparse
+from tensorflow.python.keras.layers.core import Permute
+from tensorflow.keras.layers import Dense, Activation, Conv2D, Flatten
+from tensorflow.keras import layers
+from tensorflow import keras
+import tensorflow as tf
+from pydlshogi.read_kifu import *
+from pydlshogi.features import *
+from pydlshogi.time_log import TimeLog
+from pydlshogi.common import *
+import numpy as np
 
-from hurry.filesize import size
-import logging
-from memory_profiler import profile
+import pydlshogi
+import pydlshogi.util
 
 
 class BiasLayer(tf.keras.layers.Layer):
@@ -58,7 +55,6 @@ def createModel(blocks):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser = add_argument_for_train(parser)
-    parser.add_argument('--kifulist_root')
     parser.add_argument('--blocks', type=int, default=11,
                         help='Number of resnet blocks')
     parser.add_argument('--batchsize', '-b', type=int, default=32,
@@ -67,8 +63,7 @@ if __name__ == "__main__":
                         help='Number of positions in each test mini-batch')
     parser.add_argument('--epoch', '-e', type=int,
                         default=1, help='Number of epoch times')
-    parser.add_argument(
-        '--model', type=str, default='model/model_policy_tf', help='model file name')
+    parser.add_argument('--model', help='model dir name')
     parser.add_argument('--initmodel', '-m', default='',
                         help='Initialize the model from given file')
     parser.add_argument('--log', default=None, help='log file path')
@@ -82,7 +77,7 @@ if __name__ == "__main__":
     lr = args.lr
     eval_interval = args.eval_interval
     initmodel = args.initmodel
-    save_model = args.model
+    save_model_dir = args.model
 
     logging.basicConfig(format='%(asctime)s\t%(levelname)s\t%(message)s',
                         datefmt='%Y/%m/%d %H:%M:%S', filename=args.log, level=logging.DEBUG)
@@ -154,13 +149,25 @@ if __name__ == "__main__":
     logger.info(f'x_test num = {test_num}')
 
     time_train.start()
+    # チェックポイントコールバックを作る
+    callbacks = []
+    if save_model_dir:
+        callbacks.append(tf.keras.callbacks.ModelCheckpoint(os.path.join(save_model_dir, 'weights-{epoch:04d}-{val_loss:.2f}.ckpt'),
+                                                            save_weights_only=True,
+                                                            verbose=1))
+
     model.compile(optimizer=optimizer, loss=loss_fn,
                   metrics=['accuracy'])
-    model.fit(train_dataset, epochs=epochs, batch_size=batchsize,
-              validation_data=test_dataset, verbose=1)
+    history = model.fit(train_dataset, epochs=epochs, batch_size=batchsize,
+                        validation_data=test_dataset, callbacks=callbacks, verbose=1)
     time_train.end()
 
     logging.info('save the model')
-    model.save(save_model)
+    if save_model_dir:
+        model.save(os.path.join(save_model_dir, 'model'))
+        pydlshogi.util.save_history(
+            history, os.path.join(save_model_dir, 'history.pickle'))
+        pydlshogi.util.save_history(
+            history, os.path.join(save_model_dir, 'history.csv'))
 
     logger.info(f'\n{TimeLog.debug()}')

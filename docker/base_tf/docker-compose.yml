@@ -1,8 +1,8 @@
 version: "2.3"
 services:
-  base_chainer:
+  base_tf:
     stdin_open: true
     tty: true
     build:
       context: ../
-      dockerfile: base_chainer/Dockerfile
+      dockerfile: base_tf/Dockerfile

@@ -68,6 +68,31 @@ def posions_to_single_board(positions):
     return [posion_to_single_board(position) for position in positions]
 
 
+def board_to_single_board(piece_bb, occupied, pieces_in_hand):
+    single_board_and_piece_in_hand = np.zeros(9*9 + 7*2, dtype=np.int8)
+
+    for color in shogi.COLORS:
+        # board pieces
+        time_board_pieces.start()
+        for piece_type in shogi.PIECE_TYPES_WITH_NONE[1:]:
+            bb = piece_bb[piece_type] & occupied[color]
+            feature = np.zeros(9*9, dtype=np.int8)
+            for pos in shogi.SQUARES:
+                if bb & shogi.BB_SQUARES[pos] > 0:
+                    single_board_and_piece_in_hand[pos] = piece_type * \
+                        (1 if color == shogi.BLACK else -1)
+    idx = 81
+    for color in shogi.COLORS:
+        # pieces in hand
+        for piece_type in range(1, 8):
+            for n in range(shogi.MAX_PIECES_IN_HAND[piece_type]):
+                if piece_type in pieces_in_hand[color]:
+                    single_board_and_piece_in_hand[idx] = pieces_in_hand[color][piece_type]
+            idx += 1
+
+    return single_board_and_piece_in_hand
+
+
 def posion_to_single_board(position):
     piece_bb, occupied, pieces_in_hand, move, win = position
     single_board_and_piece_in_hand = np.zeros(9*9 + 7*2, dtype=np.int8)
@@ -158,7 +183,8 @@ def make_input_features_from_board(board):
         pieces_in_hand = (
             board.pieces_in_hand[shogi.WHITE], board.pieces_in_hand[shogi.BLACK])
 
-    return make_input_features(piece_bb, occupied, pieces_in_hand)
+    single_board = board_to_single_board(piece_bb, occupied, pieces_in_hand)
+    return make_input_features_from_single_board_list([single_board])
 
 
 def make_output_label(move, color):

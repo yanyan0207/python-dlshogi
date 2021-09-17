@@ -1,18 +1,23 @@
 ﻿import numpy as np
-import chainer
-from chainer import serializers
-from chainer import cuda, Variable
-import chainer.functions as F
-
+import scipy as sp
 import shogi
 
 from pydlshogi.common import *
 from pydlshogi.features import *
-from pydlshogi.network.policy import *
 from pydlshogi.player.base_player import *
+
+
+# tensorflow by cpu
+
+import os
+if True:
+    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+from tensorflow import keras
+
 
 def greedy(logits):
     return logits.index(max(logits))
+
 
 def boltzmann(logits, temperature):
     logits /= temperature
@@ -21,10 +26,11 @@ def boltzmann(logits, temperature):
     probabilities /= probabilities.sum()
     return np.random.choice(len(logits), p=probabilities)
 
+
 class PolicyPlayer(BasePlayer):
     def __init__(self):
         super().__init__()
-        self.modelfile = r'H:\src\python-dlshogi\model\model_policy'
+        self.modelfile = r'/home/yanyan/data/model_2017_policy/model/'
         self.model = None
 
     def usi(self):
@@ -38,24 +44,17 @@ class PolicyPlayer(BasePlayer):
 
     def isready(self):
         if self.model is None:
-            self.model = PolicyNetwork()
-            self.model.to_gpu()
-        serializers.load_npz(self.modelfile, self.model)
+            self.model = keras.models.load_model(self.modelfile)
         print('readyok')
 
     def go(self):
         if self.board.is_game_over():
             print('bestmove resign')
             return
-
+        print("turn", self.board.turn)
         features = make_input_features_from_board(self.board)
-        x = Variable(cuda.to_gpu(np.array([features], dtype=np.float32)))
-
-        with chainer.no_backprop_mode():
-            y = self.model(x)
-
-            logits = cuda.to_cpu(y.data)[0]
-            probabilities = cuda.to_cpu(F.softmax(y).data)[0]
+        logits = self.model.predict(features)[0]
+        probabilities = sp.special.softmax(logits)
 
         # 全ての合法手について
         legal_moves = []
@@ -67,8 +66,9 @@ class PolicyPlayer(BasePlayer):
             legal_moves.append(move)
             legal_logits.append(logits[label])
             # 確率を表示
-            print('info string {:5} : {:.5f}'.format(move.usi(), probabilities[label]))
-            
+            print('info string {:5} : {:.5f}'.format(
+                move.usi(), probabilities[label]))
+
         # 確率が最大の手を選ぶ(グリーディー戦略)
         selected_index = greedy(legal_logits)
         # 確率に応じて手を選ぶ(ソフトマックス戦略)

@@ -22,9 +22,12 @@ class BasePlayer:
             for move in moves[2:]:
                 self.board.push_usi(move)
         elif moves[0] == 'sfen':
-            self.board.set_sfen(' '.join(moves[1:]))
+            self.board.set_sfen(' '.join(moves[1:5]))
+            for move in moves[6:]:
+                self.board.push_usi(move)
+
         # for debug
-        print(self.board.sfen())
+        # print(self.board.sfen())
 
     def go(self):
         pass

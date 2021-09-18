@@ -30,7 +30,7 @@ def boltzmann(logits, temperature):
 class PolicyPlayer(BasePlayer):
     def __init__(self):
         super().__init__()
-        self.modelfile = r'/home/yanyan/data/model_2017_policy/model/'
+        self.modelfile = '/Users/yanyano0207/Downloads/model_2017_policy/model/'
         self.model = None
 
     def usi(self):
@@ -47,11 +47,15 @@ class PolicyPlayer(BasePlayer):
             self.model = keras.models.load_model(self.modelfile)
         print('readyok')
 
+    def position(self, moves):
+        super().position(moves)
+        self.position_calld = True
+
     def go(self):
         if self.board.is_game_over():
             print('bestmove resign')
             return
-        print("turn", self.board.turn)
+        #print("turn", self.board.turn)
         features = make_input_features_from_board(self.board)
         logits = self.model.predict(features)[0]
         probabilities = sp.special.softmax(logits)
@@ -75,4 +79,6 @@ class PolicyPlayer(BasePlayer):
         #selected_index = boltzmann(np.array(legal_logits, dtype=np.float32), 0.5)
         bestmove = legal_moves[selected_index]
 
-        print('bestmove', bestmove.usi())
+        if self.position_calld:
+            print('bestmove', bestmove.usi())
+        self.position_calld = False

@@ -7,6 +7,7 @@ import scipy as sp
 import numpy as np
 import glob
 import math
+import csa_creater
 
 if True:
     os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
@@ -93,8 +94,8 @@ if __name__ == "__main__":
 
     ckpt_index_list = glob.glob(
         '/Users/yanyano0207/Downloads/model_2017_policy/weights*.ckpt.index')
-    player_list = [game.Player()] + [PolicyPlayer(os.path.basename(ckpt))
-                                     for ckpt in ckpt_index_list][:1]
+    player_list = [PolicyPlayer(os.path.basename(ckpt))
+                   for ckpt in ckpt_index_list]
 
     for player, ckpt in zip(player_list, ckpt_index_list):
         player.setConfig(
@@ -102,6 +103,7 @@ if __name__ == "__main__":
         player.setConfig('WeightsPath', ckpt[:-6])
         player.prepare()
 
+    player_list += [game.Player()]
     player_match_list = [(player, player2)
                          for player in player_list for player2 in player_list if player != player2]
 
@@ -113,6 +115,11 @@ if __name__ == "__main__":
         print(result.black_player_name, result.white_player_name,
               result.move_num, result.result, result.reason)
         standing_list.addResult(result)
+        ofile = f'{result.startTime.strftime("%Y%m%d-%H%M%S")}' \
+            + f'_{result.black_player_name}' \
+            + f'_{result.white_player_name}.csa'
+        csa_creater.createKif(match.board, ofile, result)
 
-    for name, standing in standing_list.standing_list.items():
+    for name, standing in sorted(standing_list.standing_list.items(), reverse=True,
+                                 key=lambda x: x[1].win_rate):
         print(f'{name} {standing.win} - {standing.lose} - {standing.draw} {round(standing.win_rate * 100)}%')

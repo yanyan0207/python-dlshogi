@@ -4,7 +4,7 @@ import copy
 import random
 from enum import Enum
 from shogi.Consts import BLACK, WHITE
-import time
+from datetime import datetime as dt
 
 
 class Player():
@@ -40,6 +40,7 @@ class Reason(Enum):
     MAX_MOVE = 'MAX_MOVE'
     # TODO TIMEOUT = 'TIMEOUT'
     # TPDP TRU = 'TRY'
+    # TODO ABNORMAL = 'ABNORMAL'
 
 
 class Result(Enum):
@@ -50,20 +51,20 @@ class Result(Enum):
 
 class GameResult():
 
-    def __init__(self, black: Player, white: Player, startTime: float = None):
+    def __init__(self, black: Player, white: Player, startTime: dt = None):
         self.black_player_name = black.name
         self.white_player_name = white.name
         self.reason = None
         self.result = None
         self.move_num = None
-        self.startTime = time.time() if startTime is None else startTime
+        self.startTime = dt.now() if startTime is None else startTime
         self.endTime = None
 
-    def setResult(self, result: Result, reason: Reason, move_num: int, endTime: float = None):
+    def setResult(self, result: Result, reason: Reason, move_num: int, endTime: dt = None):
         self.reason = reason
         self.result = result
         self.move_num = move_num
-        self.endTime = time.time() if endTime is None else endTime
+        self.endTime = dt.now() if endTime is None else endTime
 
 
 class Game():

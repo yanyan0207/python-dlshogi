@@ -5,6 +5,7 @@ import random
 from enum import Enum
 from shogi.Consts import BLACK, WHITE
 from datetime import datetime as dt
+from pydlshogi.time_log import TimeLog
 
 
 class Player():
@@ -67,6 +68,11 @@ class GameResult():
         self.endTime = dt.now() if endTime is None else endTime
 
 
+time_legal_moves = TimeLog('legal_moves')
+time_best_move = TimeLog('best_move')
+time_end = TimeLog('end')
+
+
 class Game():
     @ staticmethod
     def opposit(turn: int):
@@ -116,10 +122,16 @@ class Game():
         turn = self.board.turn
         opposit = self.opposit(turn)
         player = self.players[self.board.turn]
+
+        time_legal_moves.start()
         legal_moves = {move for move in self.board.legal_moves}
+        time_legal_moves.end()
 
+        time_best_move.start()
         move = player.bestMove(copy.deepcopy(self.board), legal_moves)
+        time_best_move.end()
 
+        time_end.start()
         # 投了の場合
         if move is None:
             # 投了
@@ -161,6 +173,7 @@ class Game():
             else:
                 # 通常ルート
                 end = False
+        time_end.end()
 
         return end
 

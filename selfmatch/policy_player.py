@@ -8,10 +8,18 @@ import numpy as np
 import glob
 import math
 import csa_creater
+import tensorflow as tf
+from pydlshogi.time_log import TimeLog
 
 if True:
     os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 from tensorflow import keras
+
+time_feature = TimeLog('feature')
+time_predict = TimeLog('predict')
+time_softmax = TimeLog('softmax')
+time_label = TimeLog('label')
+time_find_max = TimeLog('find_max')
 
 
 class PolicyPlayer(game.Player):
@@ -31,6 +39,8 @@ class PolicyPlayer(game.Player):
         self.model = keras.models.load_model(self.modelPath)
         if self.weightsPath:
             self.model.load_weights(self.weightsPath)
+        self.model.call = tf.function(
+            self.model.call, experimental_relax_shapes=True)
 
     def startMatch(self):
         pass
@@ -40,16 +50,31 @@ class PolicyPlayer(game.Player):
         if len(legal_moves) == 0:
             return None
 
+        time_feature.start()
         features = make_input_features_from_board(board)
-        logits = self.model.predict(features)[0]
+        time_feature.end()
+
+        time_predict.start()
+        logits = self.model(features, training=False)[0]
+        time_predict.end()
+        time_softmax.start()
         probabilities = sp.special.softmax(logits)
+        time_softmax.end()
+
+        time_label.start()
         moves = [(move, make_output_label(move, board.turn))
                  for move in legal_moves]
+        time_label.end()
+        time_find_max.start()
         probs = [probabilities[move_label] for move, move_label in moves]
-        return moves[np.argmax(probs)][0]
+        best_move = moves[np.argmax(probs)][0]
+        time_find_max.end()
+        return best_move
 
 
 if __name__ == "__main__":
+    time_kif = TimeLog("kif")
+
     class Standing:
         def __init__(self):
             self.win = 0
@@ -112,6 +137,8 @@ if __name__ == "__main__":
         match = game.Game(player, player2)
         match.setDisplayKif(False)
         result = match.playMatch()
+
+        time_kif.start()
         print(result.black_player_name, result.white_player_name,
               result.move_num, result.result, result.reason)
         standing_list.addResult(result)
@@ -119,7 +146,10 @@ if __name__ == "__main__":
             + f'_{result.black_player_name}' \
             + f'_{result.white_player_name}.csa'
         csa_creater.createKif(match.board, ofile, result)
+        time_kif.end()
 
     for name, standing in sorted(standing_list.standing_list.items(), reverse=True,
                                  key=lambda x: x[1].win_rate):
         print(f'{name} {standing.win} - {standing.lose} - {standing.draw} {round(standing.win_rate * 100)}%')
+
+    print(TimeLog.debug())

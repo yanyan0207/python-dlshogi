@@ -128,7 +128,7 @@ class Game():
         time_legal_moves.end()
 
         time_best_move.start()
-        move = player.bestMove(copy.deepcopy(self.board), legal_moves)
+        move = player.bestMove(self.board, legal_moves)
         time_best_move.end()
 
         time_end.start()

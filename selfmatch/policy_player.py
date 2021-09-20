@@ -10,9 +10,6 @@ import math
 import csa_creater
 import tensorflow as tf
 from pydlshogi.time_log import TimeLog
-
-if True:
-    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 from tensorflow import keras
 
 time_feature = TimeLog('feature')
@@ -36,11 +33,13 @@ class PolicyPlayer(game.Player):
             self.weightsPath = value
 
     def prepare(self):
-        self.model = keras.models.load_model(self.modelPath)
+        model = keras.models.load_model(self.modelPath)
         if self.weightsPath:
-            self.model.load_weights(self.weightsPath)
-        self.model.call = tf.function(
-            self.model.call, experimental_relax_shapes=True)
+            model.load_weights(self.weightsPath)
+        model.call = tf.function(
+            model.call, experimental_relax_shapes=True)
+        model.predict(np.random.rand(1, 9, 9, 104).astype(np.int8))
+        self.model = model
 
     def startMatch(self):
         pass

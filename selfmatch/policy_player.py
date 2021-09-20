@@ -16,6 +16,7 @@ time_feature = TimeLog('feature')
 time_predict = TimeLog('predict')
 time_softmax = TimeLog('softmax')
 time_label = TimeLog('label')
+time_logits = TimeLog('logits')
 time_find_max = TimeLog('find_max')
 
 
@@ -25,12 +26,15 @@ class PolicyPlayer(game.Player):
         self.modelPath = None
         self.weightsPath = None
         self.model: keras.models.model = None
+        self.strategy = 'greedy'
 
     def setConfig(self, key, value):
         if key == 'ModelPath':
             self.modelPath = value
         elif key == 'WeightsPath':
             self.weightsPath = value
+        elif key == 'Strategy':
+            self.strategy = value
 
     def prepare(self):
         model = keras.models.load_model(self.modelPath)
@@ -54,19 +58,34 @@ class PolicyPlayer(game.Player):
         time_feature.end()
 
         time_predict.start()
-        logits = self.model(features, training=False)[0]
+        logits = np.array(self.model(features, training=False)[0])
         time_predict.end()
-        time_softmax.start()
-        probabilities = sp.special.softmax(logits)
-        time_softmax.end()
 
         time_label.start()
-        moves = [(move, make_output_label(move, board.turn))
-                 for move in legal_moves]
+        legal_moves = list(legal_moves)
+        logical_move_labels = [make_output_label(
+            move, board.turn) for move in legal_moves]
         time_label.end()
-        time_find_max.start()
-        probs = [probabilities[move_label] for move, move_label in moves]
-        best_move = moves[np.argmax(probs)][0]
+        time_logits.start()
+        logical_move_logits = [logits[label]
+                               for label in logical_move_labels]
+        time_logits.end()
+
+        if self.strategy == 'greedy':
+            time_find_max.start()
+            best_move = legal_moves[np.argmax(logical_move_logits)]
+            time_find_max.end()
+        elif self.strategy == 'softmax':
+            time_softmax.start()
+            probabilities = sp.special.softmax(logical_move_logits)
+            time_softmax.end()
+            time_find_max.start()
+            best_move = legal_moves[np.random.choice(
+                len(probabilities), p=probabilities)]
+            time_find_max.end()
+        else:
+            raise RuntimeError(f'Unkown Strategy:{self.strategy}')
+
         time_find_max.end()
         return best_move
 
@@ -116,16 +135,20 @@ if __name__ == "__main__":
                 self.standing_list[result.black_player_name].addDraw()
                 self.standing_list[result.white_player_name].addDraw()
 
-    ckpt_index_list = glob.glob(
-        '/Users/yanyano0207/Downloads/model_2017_policy/weights*.ckpt.index')
-    player_list = [PolicyPlayer(os.path.basename(ckpt))
-                   for ckpt in ckpt_index_list]
+    MODEL_ROOT = os.path.join(os.environ['HOME'], 'data/model_2017_policy')
 
-    for player, ckpt in zip(player_list, ckpt_index_list):
-        player.setConfig(
-            'ModelPath', '/Users/yanyano0207/Downloads/model_2017_policy/model/')
-        player.setConfig('WeightsPath', ckpt[:-6])
-        player.prepare()
+    ckpt_index_list = glob.glob(os.path.join(
+        MODEL_ROOT, 'weights*.ckpt.index'))
+
+    player_list = []
+    for strategy in ['greedy', 'softmax']:
+        for ckpt in ckpt_index_list:
+            player = PolicyPlayer(f'{strategy}_{os.path.basename(ckpt)}')
+            player.setConfig('ModelPath', os.path.join(MODEL_ROOT, 'model'))
+            player.setConfig('WeightsPath', ckpt[:-6])
+            player.setConfig('Strategy', strategy)
+            player.prepare()
+            player_list.append(player)
 
     player_list += [game.Player()]
     player_match_list = [(player, player2)

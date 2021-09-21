@@ -2,6 +2,10 @@ import shogi
 import shogi.CSA
 import game
 import os
+
+if False:
+    os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+
 from pydlshogi.features import *
 import scipy as sp
 import numpy as np
@@ -11,6 +15,7 @@ import csa_creater
 import tensorflow as tf
 from pydlshogi.time_log import TimeLog
 from tensorflow import keras
+from argparse import ArgumentParser
 
 time_feature = TimeLog('feature')
 time_predict = TimeLog('predict')
@@ -135,20 +140,30 @@ if __name__ == "__main__":
                 self.standing_list[result.black_player_name].addDraw()
                 self.standing_list[result.white_player_name].addDraw()
 
-    MODEL_ROOT = os.path.join(os.environ['HOME'], 'data/model_2017_policy')
+    parser = ArgumentParser()
+    parser.add_argument('model_root', nargs='*')
+    args = parser.parse_args()
 
-    ckpt_index_list = glob.glob(os.path.join(
-        MODEL_ROOT, 'weights*.ckpt.index'))
+    model_list = args.model_root
 
     player_list = []
-    for strategy in ['greedy', 'softmax']:
-        for ckpt in ckpt_index_list:
-            player = PolicyPlayer(f'{strategy}_{os.path.basename(ckpt)}')
-            player.setConfig('ModelPath', os.path.join(MODEL_ROOT, 'model'))
-            player.setConfig('WeightsPath', ckpt[:-6])
-            player.setConfig('Strategy', strategy)
-            player.prepare()
-            player_list.append(player)
+    for model_root in model_list:
+        ckpt_index_list = glob.glob(os.path.join(
+            model_root, 'weights*.ckpt.index'))
+
+        for strategy in ['greedy', 'softmax']:
+            for ckpt in ckpt_index_list:
+                player = PolicyPlayer(
+                    f'{strategy}_{os.path.basename(model_root)}_{os.path.basename(ckpt)}')
+                player.setConfig(
+                    'ModelPath', os.path.join(model_root, 'model'))
+                player.setConfig('WeightsPath', ckpt[:-6])
+                player.setConfig('Strategy', strategy)
+                try:
+                    player.prepare()
+                    player_list.append(player)
+                except:
+                    print('error', model_root, os.path.basename(ckpt))
 
     player_list += [game.Player()]
     player_match_list = [(player, player2)

@@ -140,8 +140,8 @@ if __name__ == "__main__":
     test_dataset = tf.data.Dataset.from_tensor_slices(
         (single_board_list_test, move_test))
 
-    train_dataset = train_dataset.batch(32).map(lambda x, y:
-                                                (tf.numpy_function(func=make_input_features_from_single_board_list, inp=[x], Tout=tf.int8), y))
+    train_dataset = train_dataset.shuffle(len(train_dataset)).batch(32).map(lambda x, y:
+                                                                            (tf.numpy_function(func=make_input_features_from_single_board_list, inp=[x], Tout=tf.int8), y))
     test_dataset = test_dataset.batch(32).map(lambda x, y:
                                               (tf.numpy_function(func=make_input_features_from_single_board_list, inp=[x], Tout=tf.int8), y))
 

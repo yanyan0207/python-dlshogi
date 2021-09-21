@@ -4,7 +4,7 @@ import copy
 import sys
 import pandas as pd
 
-from shogi.Consts import BLACK
+from shogi.Consts import BLACK, GOLD
 from pydlshogi.common import *
 from pydlshogi.time_log import *
 
@@ -123,23 +123,36 @@ def make_input_features_from_single_board_list(single_board_list):
     single_board_list = np.asarray(single_board_list, dtype=np.int8)
     sample_num = single_board_list.shape[0]
     features = np.zeros(
-        (sample_num, 81, (14+18+4+4+4+4+2+2)*2), dtype=np.int8)
+        (sample_num, 81, (9+18+4+4+4+4+2+2)*2), dtype=np.int8)
 
     idx = 0
     in_hand_idx = 81
     for color in shogi.COLORS:
         # board pieces
-        for piece_type in shogi.PIECE_TYPES_WITH_NONE[1:]:
+        for piece_type in shogi.PIECE_TYPES_WITH_NONE[1:shogi.KING + 1]:
+
             features[:, :, idx][single_board_list[:, :81] ==
                                 piece_type * (1 if color == shogi.BLACK else -1)] = 1
             idx += 1
+        # promoted
+        for i, piece_type in enumerate(shogi.PIECE_TYPES_WITH_NONE[shogi.PROM_PAWN:]):
+            promoted_idx = idx - 8 + i + \
+                (0 if piece_type < shogi.PROM_BISHOP else 1)
+            # 成る前の駒のビットボードに追加
+            features[:, :, promoted_idx][single_board_list[:, :81] ==
+                                         piece_type * (1 if color == shogi.BLACK else -1)] = 1
+            # 成りフラグビットボードに追加
+            features[:, :, idx][single_board_list[:, :81] ==
+                                piece_type * (1 if color == shogi.BLACK else -1)] = 1
+        idx += 1
+
         # pieces in hand
         for piece_type in range(1, 8):
             for n in range(shogi.MAX_PIECES_IN_HAND[piece_type]):
                 features[:, :, idx][n < single_board_list[:, in_hand_idx]] = 1
                 idx += 1
             in_hand_idx += 1
-    return features.reshape(sample_num, 9, 9, 104)
+    return features.reshape(sample_num, 9, 9, 94)
 
 
 def make_input_features(piece_bb, occupied, pieces_in_hand):

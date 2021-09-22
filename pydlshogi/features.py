@@ -135,8 +135,8 @@ def make_input_features_from_single_board_list(single_board_list):
             idx += 1
         # pieces in hand
         for piece_type in range(1, 8):
-            features[:, :, idx] = np.expand_dims(single_board_list[:, in_hand_idx], axis=-1) / \
-                shogi.MAX_PIECES_IN_HAND[piece_type]
+            features[:, :, idx] = np.expand_dims(
+                single_board_list[:, in_hand_idx], axis=-1)
             idx += 1
             in_hand_idx += 1
     return features.reshape(sample_num, 9, 9, 42)

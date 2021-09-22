@@ -47,7 +47,7 @@ class PolicyPlayer(game.Player):
             model.load_weights(self.weightsPath)
         model.call = tf.function(
             model.call, experimental_relax_shapes=True)
-        model.predict(np.random.rand(1, 9, 9, 104).astype(np.int8))
+        #model.predict(np.random.rand(1, 9, 9, 104).astype(np.int8))
         self.model = model
 
     def startMatch(self):
@@ -59,7 +59,8 @@ class PolicyPlayer(game.Player):
             return None
 
         time_feature.start()
-        features = make_input_features_from_board(board)
+        features = make_input_features_from_board(
+            board, self.model.layers[1].weights[0].numpy().shape[2] == 94)
         time_feature.end()
 
         time_predict.start()
@@ -162,8 +163,8 @@ if __name__ == "__main__":
                 try:
                     player.prepare()
                     player_list.append(player)
-                except:
-                    print('error', model_root, os.path.basename(ckpt))
+                except BaseException as e:
+                    print('error', model_root, os.path.basename(ckpt), e)
 
     player_list += [game.Player()]
     player_match_list = [(player, player2)

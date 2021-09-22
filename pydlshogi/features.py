@@ -119,32 +119,41 @@ def posion_to_single_board(position):
     return single_board_and_piece_in_hand, move, win
 
 
-def make_input_features_from_single_board_list(single_board_list):
+def make_input_features_from_single_board_list(single_board_list, narikoma_bb=True):
     single_board_list = np.asarray(single_board_list, dtype=np.int8)
     sample_num = single_board_list.shape[0]
+    channel_num = 94 if narikoma_bb else 104
     features = np.zeros(
-        (sample_num, 81, (9+18+4+4+4+4+2+2)*2), dtype=np.int8)
+        (sample_num, 81, channel_num), dtype=np.int8)
 
     idx = 0
     in_hand_idx = 81
     for color in shogi.COLORS:
-        # board pieces
-        for piece_type in shogi.PIECE_TYPES_WITH_NONE[1:shogi.KING + 1]:
+        if narikoma_bb:
+            # board pieces
+            for piece_type in shogi.PIECE_TYPES_WITH_NONE[1:shogi.KING + 1]:
 
-            features[:, :, idx][single_board_list[:, :81] ==
-                                piece_type * (1 if color == shogi.BLACK else -1)] = 1
+                features[:, :, idx][single_board_list[:, :81] ==
+                                    piece_type * (1 if color == shogi.BLACK else -1)] = 1
+                idx += 1
+            # promoted
+            for i, piece_type in enumerate(shogi.PIECE_TYPES_WITH_NONE[shogi.PROM_PAWN:]):
+                promoted_idx = idx - 8 + i + \
+                    (0 if piece_type < shogi.PROM_BISHOP else 1)
+                # 成る前の駒のビットボードに追加
+                features[:, :, promoted_idx][single_board_list[:, :81] ==
+                                             piece_type * (1 if color == shogi.BLACK else -1)] = 1
+                # 成りフラグビットボードに追加
+                features[:, :, idx][single_board_list[:, :81] ==
+                                    piece_type * (1 if color == shogi.BLACK else -1)] = 1
             idx += 1
-        # promoted
-        for i, piece_type in enumerate(shogi.PIECE_TYPES_WITH_NONE[shogi.PROM_PAWN:]):
-            promoted_idx = idx - 8 + i + \
-                (0 if piece_type < shogi.PROM_BISHOP else 1)
-            # 成る前の駒のビットボードに追加
-            features[:, :, promoted_idx][single_board_list[:, :81] ==
-                                         piece_type * (1 if color == shogi.BLACK else -1)] = 1
-            # 成りフラグビットボードに追加
-            features[:, :, idx][single_board_list[:, :81] ==
-                                piece_type * (1 if color == shogi.BLACK else -1)] = 1
-        idx += 1
+        else:
+            # board pieces
+            for piece_type in shogi.PIECE_TYPES_WITH_NONE[1:]:
+
+                features[:, :, idx][single_board_list[:, :81] ==
+                                    piece_type * (1 if color == shogi.BLACK else -1)] = 1
+                idx += 1
 
         # pieces in hand
         for piece_type in range(1, 8):
@@ -152,7 +161,7 @@ def make_input_features_from_single_board_list(single_board_list):
                 features[:, :, idx][n < single_board_list[:, in_hand_idx]] = 1
                 idx += 1
             in_hand_idx += 1
-    return features.reshape(sample_num, 9, 9, 94)
+    return features.reshape(sample_num, 9, 9, channel_num)
 
 
 def make_input_features(piece_bb, occupied, pieces_in_hand):
@@ -183,7 +192,7 @@ def make_input_features(piece_bb, occupied, pieces_in_hand):
     return features
 
 
-def make_input_features_from_board(board):
+def make_input_features_from_board(board, narikoma_bb=True):
     if board.turn == shogi.BLACK:
         piece_bb = board.piece_bb
         occupied = (board.occupied[shogi.BLACK], board.occupied[shogi.WHITE])
@@ -197,7 +206,7 @@ def make_input_features_from_board(board):
             board.pieces_in_hand[shogi.WHITE], board.pieces_in_hand[shogi.BLACK])
 
     single_board = board_to_single_board(piece_bb, occupied, pieces_in_hand)
-    return make_input_features_from_single_board_list([single_board])
+    return make_input_features_from_single_board_list([single_board], narikoma_bb)
 
 
 def make_output_label(move, color):

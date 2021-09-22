@@ -49,7 +49,7 @@ def residualBlock(input):
 
 def createModel(blocks):
     ch = 192
-    inputs = Input(shape=(9, 9, 104), name="digits")
+    inputs = Input(shape=(9, 9, 42), name="digits")
     x = Conv2D(ch, kernel_size=(3, 3),
                activation='relu', padding='same')(inputs)
     for i in range(blocks):

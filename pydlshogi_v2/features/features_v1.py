@@ -1,7 +1,7 @@
 import pandas as pd
 import shogi
 import numpy as np
-import position_list
+from pydlshogi_v2.features import position_list
 
 # 移動の定数
 MOVE_DIRECTION = [
@@ -36,13 +36,14 @@ class FeaturesV1():
         pass
 
     def positionListToFeature(self, data):
+        single_board_list = np.asarray(data, dtype=np.int8)
         board_pieces = np.zeros(
-            (data.shape[0], 81, (14+18+4+4+4+4+2+2)*2), dtype=np.int8)
+            (single_board_list.shape[0], 81, (14+18+4+4+4+4+2+2)*2), dtype=np.int8)
         idx = 0
         hand_idx = 0
         for turn in [1, -1]:
             for piece in shogi.PIECE_TYPES:
-                board_pieces[:, :, idx][data[:, :81] == piece * turn] = 1
+                board_pieces[:, :, idx][data[:, :81] == (piece * turn)] = 1
                 idx += 1
             for piece in range(shogi.PAWN, shogi.KING):
                 for i in range(shogi.MAX_PIECES_IN_HAND[piece]):
@@ -56,7 +57,7 @@ class FeaturesV1():
         return self.positionListToFeature(np.expand_dims(position_list.boardToSingleBoard(board), axis=0))
 
     def moveArrayListToLabel(self, data):
-        return [self.moveToLabel(d[0], d[1], d[2], d[3]) for d in data]
+        return np.array([self.moveToLabel(d[0], d[1], d[2], d[3]) for d in data], dtype=np.int16)
 
     def moveToLabel(self, move_from, move_to, promotion, koma):
         # move direction

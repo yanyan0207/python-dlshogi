@@ -66,6 +66,26 @@ def readCsaToPostion(kifu, fileinfo):
         return []
 
 
+def readPositionListCsv(path, min_rate=None, max_num=None, min_move_num=None):
+    df = pd.read_csv(path, dtype=np.int8)
+
+    # 手数でフィルタリング
+    if min_move_num:
+        df = df[df.FI_move_num >= min_move_num]
+
+    # レートでフィルタリング
+    df['both_min_rate'] = df.loc[:, [
+        'FI_black_rate', 'FI_white_rate']].min(axis=1)
+    if min_rate:
+        df = df[df.both_min_rate >= min_rate]
+
+    # レートの高いデータを抽出
+    if max_num:
+        df = df.nlargest(max_num, 'both_min_rate')
+
+    return df
+
+
 def main(args):
     parser = ArgumentParser()
     parser.add_argument('kifulist')

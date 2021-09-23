@@ -119,11 +119,12 @@ def posion_to_single_board(position):
     return single_board_and_piece_in_hand, move, win
 
 
-def make_input_features_from_single_board_list(single_board_list):
+def make_input_features_from_single_board_list(single_board_list, piece_in_hands=True):
     single_board_list = np.asarray(single_board_list, dtype=np.int8)
     sample_num = single_board_list.shape[0]
+    channel_num = 42 if piece_in_hands else 104
     features = np.zeros(
-        (sample_num, 81, (14+7)*2), dtype=np.int8)
+        (sample_num, 81, channel_num), dtype=np.int8)
 
     idx = 0
     in_hand_idx = 81
@@ -135,11 +136,18 @@ def make_input_features_from_single_board_list(single_board_list):
             idx += 1
         # pieces in hand
         for piece_type in range(1, 8):
-            features[:, :, idx] = np.expand_dims(
-                single_board_list[:, in_hand_idx], axis=-1)
-            idx += 1
+            if piece_in_hands:
+                features[:, :, idx] = np.expand_dims(
+                    single_board_list[:, in_hand_idx], axis=-1)
+                idx += 1
+            else:
+                for n in range(shogi.MAX_PIECES_IN_HAND[piece_type]):
+                    features[:, :, idx][n <
+                                        single_board_list[:, in_hand_idx]] = 1
+                    idx += 1
+
             in_hand_idx += 1
-    return features.reshape(sample_num, 9, 9, 42)
+    return features.reshape(sample_num, 9, 9, channel_num)
 
 
 def make_input_features(piece_bb, occupied, pieces_in_hand):
@@ -170,7 +178,7 @@ def make_input_features(piece_bb, occupied, pieces_in_hand):
     return features
 
 
-def make_input_features_from_board(board):
+def make_input_features_from_board(board, piece_in_hands=True):
     if board.turn == shogi.BLACK:
         piece_bb = board.piece_bb
         occupied = (board.occupied[shogi.BLACK], board.occupied[shogi.WHITE])
@@ -184,7 +192,7 @@ def make_input_features_from_board(board):
             board.pieces_in_hand[shogi.WHITE], board.pieces_in_hand[shogi.BLACK])
 
     single_board = board_to_single_board(piece_bb, occupied, pieces_in_hand)
-    return make_input_features_from_single_board_list([single_board])
+    return make_input_features_from_single_board_list([single_board], piece_in_hands=piece_in_hands)
 
 
 def make_output_label(move, color):

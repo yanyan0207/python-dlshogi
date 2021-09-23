@@ -30,7 +30,7 @@ class PolicyPlayer(game.Player):
         self.name = name
         self.modelPath = None
         self.weightsPath = None
-        self.model: keras.models.model = None
+        self.model: keras.models.Model = None
         self.strategy = 'greedy'
 
     def setConfig(self, key, value):
@@ -47,7 +47,7 @@ class PolicyPlayer(game.Player):
             model.load_weights(self.weightsPath)
         model.call = tf.function(
             model.call, experimental_relax_shapes=True)
-        model.predict(np.random.rand(1, 9, 9, 104).astype(np.int8))
+        #model.predict(np.random.rand(1, 9, 9, 104).astype(np.int8))
         self.model = model
 
     def startMatch(self):
@@ -59,7 +59,9 @@ class PolicyPlayer(game.Player):
             return None
 
         time_feature.start()
-        features = make_input_features_from_board(board)
+        model: keras.models.Model = self.model
+        features = make_input_features_from_board(
+            board, model.layers[1].weights[0].numpy().shape[2] == 42)
         time_feature.end()
 
         time_predict.start()

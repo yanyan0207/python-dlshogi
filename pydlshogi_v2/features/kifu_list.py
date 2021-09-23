@@ -59,7 +59,7 @@ def main(args):
 
     # 棋譜リストの作成
     df = pd.DataFrame(board_list)
-    df.to_csv(args.ofile, index=False)
+    df.to_csv(args.ofile)
 
 
 if __name__ == '__main__':

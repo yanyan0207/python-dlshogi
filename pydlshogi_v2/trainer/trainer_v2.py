@@ -5,9 +5,9 @@ from tensorflow.keras import optimizers
 from tensorflow.keras import losses
 from tensorflow.python.data.ops.dataset_ops import AUTOTUNE
 
-from pydlshogi_v2.features.features_v1 import FeaturesV1
+from pydlshogi_v2.features.features_v2 import FeaturesV2
 from pydlshogi_v2.features.position_list import readPositionListCsv
-from pydlshogi_v2.models import resnet, modelUtil
+from pydlshogi_v2.models import resnet_v2, modelUtil
 
 import sys
 import os
@@ -50,7 +50,7 @@ def main(args):
     pos_columns = [c for c in df_train.columns if c[:2] == 'P_']
     move_columns = [c for c in df_train.columns if c[:3] == 'MV_']
 
-    features = FeaturesV1()
+    features = FeaturesV2()
 
     train_ds = tf.data.Dataset.from_tensor_slices(
         (df_train.loc[:, pos_columns], features.moveArrayListToLabel(df_train.loc[:, move_columns].values)))
@@ -60,12 +60,19 @@ def main(args):
     train_ds = (train_ds
                 .shuffle(len(train_ds))
                 .batch(args.batch_size)
-                .map(lambda x, y: (tf.numpy_function(func=features.positionListToFeature, inp=[x], Tout=tf.int8), y))
+                .map(lambda x, y: ((tf.numpy_function(func=features.positionListToFeature, inp=[x], Tout=tf.int8),
+                                   tf.numpy_function(func=features.handsToFeature, inp=[
+                                                     x], Tout=tf.int8)),
+                                   y))
                 .prefetch(buffer_size=AUTOTUNE)
                 )
     test_ds = (test_ds
                .batch(4096)
-               .map(lambda x, y: (tf.numpy_function(func=features.positionListToFeature, inp=[x], Tout=tf.int8), y))
+               .map(lambda x, y: ((tf.numpy_function(func=features.positionListToFeature, inp=[x], Tout=tf.int8),
+                                   tf.numpy_function(func=features.handsToFeature, inp=[
+                                                     x], Tout=tf.int8)),
+                                  y))
+               .prefetch(buffer_size=AUTOTUNE)
                )
 
     # チェックポイントコールバックを作る
@@ -75,7 +82,7 @@ def main(args):
                                          save_weights_only=True,
                                          verbose=1))
 
-    model = resnet.createModel()
+    model = resnet_v2.createModel()
 
     if args.optimizer == 'sgd':
         optimizer = SGD(learning_rate=args.learning_rate,
@@ -90,6 +97,8 @@ def main(args):
 
     model.compile(optimizer=optimizer, loss=SparseCategoricalCrossentropy(
         from_logits=True), metrics=['accuracy'])
+    model.summary()
+
     history = model.fit(train_ds, epochs=args.epoch, batch_size=args.batch_size,
                         validation_data=test_ds, callbacks=callbacks, verbose=1)
     if args.model:

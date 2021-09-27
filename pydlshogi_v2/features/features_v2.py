@@ -38,20 +38,29 @@ class FeaturesV2():
     def positionListToFeature(self, data):
         single_board_list = np.asarray(data, dtype=np.int8)
         board_pieces = np.zeros(
-            (single_board_list.shape[0], 81, (14+18+4+4+4+4+2+2)*2), dtype=np.int8)
+            (single_board_list.shape[0], 81, 14*2), dtype=np.int8)
         idx = 0
-        hand_idx = 0
         for turn in [1, -1]:
             for piece in shogi.PIECE_TYPES:
                 board_pieces[:, :, idx][data[:, :81] == (piece * turn)] = 1
                 idx += 1
+        return board_pieces.reshape(-1, 9, 9, 28)
+
+    def handsToFeature(self, data):
+        single_board_list = np.asarray(data, dtype=np.int8)
+        hand_pieces = np.zeros(
+            (single_board_list.shape[0], (18+4+4+4+4+2+2)*2), dtype=np.int8)
+
+        hand_idx = 81
+        idx = 0
+        for turn in range(2):
             for piece in range(shogi.PAWN, shogi.KING):
                 for i in range(shogi.MAX_PIECES_IN_HAND[piece]):
-                    board_pieces[:, :, idx][data[:, 81+hand_idx] > i] = 1
+                    hand_pieces[:, idx][data[:, hand_idx] > i] = 1
                     idx += 1
                 hand_idx += 1
 
-        return board_pieces.reshape(-1, 9, 9, 104)
+        return hand_pieces
 
     def boardToFeature(self, board: shogi.Board):
         return self.positionListToFeature(np.expand_dims(position_list.boardToSingleBoard(board), axis=0))

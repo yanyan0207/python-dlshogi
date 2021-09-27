@@ -19,7 +19,8 @@ def read_csa(file):
         else:
             black_rate = -1
             white_rate = -1
-
+            end_reason = ''
+            end_reason_list = ['%TORYO', '%TIME_UP', '%SENNICHITE', '%KACHI']
             with open(file) as f:
                 for line in f:
                     line = line.rstrip()
@@ -27,7 +28,13 @@ def read_csa(file):
                         black_rate = float(line[line.rfind(':') + 1:])
                     elif line[:len("'white_rate")] == "'white_rate":
                         white_rate = float(line[line.rfind(':') + 1:])
-                        break
+                    else:
+                        for s in end_reason_list:
+                            if s in line:
+                                end_reason = s
+                                break
+                        if end_reason:
+                            break
 
             return {
                 'filename': file,
@@ -36,7 +43,9 @@ def read_csa(file):
                 'black_rate': black_rate,
                 'white_rate': white_rate,
                 'move_num': len(kifu['moves']),
-                'win': kifu['win']
+                'win': kifu['win'],
+                'end_reason': end_reason
+
             }
     except ValueError as e:
         logging.warning(f"{file} parse_file error:{e}")

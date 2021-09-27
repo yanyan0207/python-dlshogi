@@ -1,11 +1,13 @@
 from pydlshogi_v2.models.bias_layer import BiasLayer
-from tensorflow.keras.layers import Input, Conv1D, Conv2D, Permute, Flatten, Reshape, BatchNormalization, Activation
+from tensorflow.keras.layers import Input, Dense, Conv1D, Conv2D, Permute, Flatten, Reshape, BatchNormalization, Activation
 from tensorflow.keras import layers
 from tensorflow.keras.models import Model
 
+ch = 192
+fcl = 256
+
 
 def residualBlock(input):
-    ch = 192
     x = Conv2D(ch, kernel_size=(3, 3), use_bias=False, padding='same')(input)
     x = BatchNormalization()(x)
     x = Activation('relu')(x)
@@ -18,7 +20,6 @@ def residualBlock(input):
 
 def createModel(blocks=5) -> Model:
     # 盤上のコマ
-    ch = 192
     inputs_board = Input(shape=(9, 9, 28), name="digits")
     x_board = Conv2D(ch, kernel_size=(3, 3),
                      activation='relu', padding='same')(inputs_board)
@@ -34,11 +35,23 @@ def createModel(blocks=5) -> Model:
 
     for i in range(blocks):
         x = residualBlock(x)
-    x = Conv2D(27, kernel_size=(1, 1),
-               activation='relu', use_bias=False)(x)
-    x = Flatten()(x)
-    x = BiasLayer()(x)
-    outputs = x
-    model = Model(inputs=[inputs_board, inputs_hands], outputs=outputs)
+
+    # policy
+    x_policy = Conv2D(27, kernel_size=(1, 1),
+                      activation='relu', use_bias=False)(x)
+    x_policy = Flatten()(x_policy)
+    x_policy = BiasLayer()(x_policy)
+    outputs_policy = x_policy
+
+    # value
+    x_value = Conv2D(27, kernel_size=(1, 1),
+                     activation='relu', use_bias=False)(x)
+    x_value = BatchNormalization()(x_value)
+    x_value = Flatten()(x_value)
+    x_value = Dense(fcl, activation='relu')(x_value)
+    x_value = Dense(1)(x_value)
+    outputs_value = x_value
+    model = Model(inputs=[inputs_board, inputs_hands],
+                  outputs=[outputs_policy, outputs_value])
 
     return model

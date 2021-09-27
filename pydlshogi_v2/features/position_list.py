@@ -57,7 +57,10 @@ def readCsaToPostion(kifu, fileinfo):
             move_array = moveToArray(shogi.Move.from_usi(move), board)
             board.push_usi(move)
             position_list.append(
-                fileinfo + [move_num + 1] + single_board + move_array)
+                fileinfo +
+                [move_num + 1] +
+                single_board +
+                move_array)
 
         return position_list
     except BaseException as e:
@@ -67,7 +70,9 @@ def readCsaToPostion(kifu, fileinfo):
 
 
 def readPositionListCsv(path, min_rate=None, max_num=None, min_move_num=None):
-    df = pd.read_csv(path, dtype=np.int8)
+    columns = pd.read_csv(path, index_col=0, nrows=0).columns.tolist()
+    df = pd.read_csv(path, dtype={c: str if (
+        c == 'FI_END_RESULT' or c == 'FI_END_REASON') else np.int8 for c in columns})
 
     # 手数でフィルタリング
     if min_move_num:
@@ -75,7 +80,7 @@ def readPositionListCsv(path, min_rate=None, max_num=None, min_move_num=None):
 
     # レートでフィルタリング
     df['both_min_rate'] = df.loc[:, [
-        'FI_black_rate', 'FI_white_rate']].min(axis=1)
+        'FI_BLACK_RATE', 'FI_WHITE_RATE']].min(axis=1)
     if min_rate:
         df = df[df.both_min_rate >= min_rate]
 
@@ -109,19 +114,21 @@ def main(args):
     # レートが高い棋譜でフィルタリング
     if args.max_num:
         df = df.nlargest(args.max_num, 'both_min_rate')
-    df.loc[:, 'win'].replace({'b': 1, '-': 0, 'w': -1}, inplace=True)
 
     print(df.shape)
     # boardオブジェクトに変換
     position_list = Parallel(n_jobs=-1)(delayed(readCsaToPostion)(df.at[index, 'filename'],
-                                                                  [index, int(df.at[index, 'black_rate']), int(df.at[index, 'white_rate']), df.at[index, 'move_num']]) for index in df.index)
+                                                                  [index, int(df.at[index, 'black_rate']), int(df.at[index, 'white_rate']),
+                                                                  df.at[index, 'move_num'], df.at[index, 'win'], df.at[index, 'end_reason']])
+                                        for index in df.index)
 #    position_list = [readCsaToPostion(
 #        df.at[index, 'filename'],
 #        [index, int(df.at[index, 'black_rate']), int(df.at[index, 'white_rate']), df.at[index, 'move_num']]) for index in df.index]
     position_list = itertools.chain.from_iterable(position_list)
 
-    columns = ['FI_kif_index', 'FI_black_rate', 'FI_white_rate', 'FI_move_num']
-    columns += ['MOVE_NUM']
+    columns = ['FI_KIF_INDEX', 'FI_BLACK_RATE', 'FI_WHITE_RATE',
+               'FI_END_MOVE_NUM', 'FI_END_RESULT', 'FI_END_REASON']
+    columns += ['CURRENT_MOVE_NUM']
     columns += [f'P_POS{r}{c}' for r in range(1, 10) for c in range(9, 0, -1)]
     columns += [f'P_HB{koma}' for koma in HAND_KOMA_NAME]
     columns += [f'P_HW{koma}' for koma in HAND_KOMA_NAME]

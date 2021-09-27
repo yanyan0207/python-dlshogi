@@ -14,9 +14,40 @@ import os
 import pandas as pd
 import tensorflow as tf
 from tensorflow.keras.optimizers import SGD, Adam
-from tensorflow.keras.losses import SparseCategoricalCrossentropy
+from tensorflow.keras.losses import SparseCategoricalCrossentropy, BinaryCrossentropy
 from tensorflow.python.keras.callbacks import ModelCheckpoint
 from tensorflow_addons.optimizers import RectifiedAdam
+
+
+def createDataSet(df, batch_size, features: FeaturesV2):
+    pos_columns = [c for c in df.columns if c[:2] == 'P_']
+    move_columns = [c for c in df.columns if c[:3] == 'MV_']
+
+    # TORYOのみ使用する
+    df = df[df.FI_END_REASON == '%TORYO']
+
+    # 結果を作成
+    result = np.zeros(len(df), dtype=np.int8)
+    result[(df.FI_END_RESULT == 'b') & (df.CURRENT_MOVE_NUM % 2 == 1)] = 1
+    result[(df.FI_END_RESULT == 'w') & (df.CURRENT_MOVE_NUM % 2 == 0)] = 1
+
+    ds = tf.data.Dataset.from_tensor_slices(
+        (df.loc[:, pos_columns],
+         (features.moveArrayListToLabel(df.loc[:, move_columns].values),
+          result)
+         )
+    )
+
+    ds = (ds
+          .shuffle(len(ds))
+          .batch(batch_size)
+          .map(lambda x, y: ((tf.numpy_function(func=features.positionListToFeature, inp=[x], Tout=tf.int8),
+                              tf.numpy_function(func=features.handsToFeature, inp=[
+                                  x], Tout=tf.int8)),
+                             y))
+          .prefetch(buffer_size=AUTOTUNE)
+          )
+    return ds
 
 
 def main(args):
@@ -47,33 +78,11 @@ def main(args):
 
     print(df_train.shape)
     print(df_test.shape)
-    pos_columns = [c for c in df_train.columns if c[:2] == 'P_']
-    move_columns = [c for c in df_train.columns if c[:3] == 'MV_']
 
     features = FeaturesV2()
 
-    train_ds = tf.data.Dataset.from_tensor_slices(
-        (df_train.loc[:, pos_columns], features.moveArrayListToLabel(df_train.loc[:, move_columns].values)))
-    test_ds = tf.data.Dataset.from_tensor_slices(
-        (df_test.loc[:, pos_columns], features.moveArrayListToLabel(df_test.loc[:, move_columns].values)))
-
-    train_ds = (train_ds
-                .shuffle(len(train_ds))
-                .batch(args.batch_size)
-                .map(lambda x, y: ((tf.numpy_function(func=features.positionListToFeature, inp=[x], Tout=tf.int8),
-                                   tf.numpy_function(func=features.handsToFeature, inp=[
-                                                     x], Tout=tf.int8)),
-                                   y))
-                .prefetch(buffer_size=AUTOTUNE)
-                )
-    test_ds = (test_ds
-               .batch(4096)
-               .map(lambda x, y: ((tf.numpy_function(func=features.positionListToFeature, inp=[x], Tout=tf.int8),
-                                   tf.numpy_function(func=features.handsToFeature, inp=[
-                                                     x], Tout=tf.int8)),
-                                  y))
-               .prefetch(buffer_size=AUTOTUNE)
-               )
+    train_ds = createDataSet(df_train, args.batch_size, features)
+    test_ds = createDataSet(df_test, 4096, features)
 
     # チェックポイントコールバックを作る
     callbacks = []
@@ -95,8 +104,9 @@ def main(args):
     else:
         raise('unknown optimzer:' + args.optimizer)
 
-    model.compile(optimizer=optimizer, loss=SparseCategoricalCrossentropy(
-        from_logits=True), metrics=['accuracy'])
+    model.compile(optimizer=optimizer, loss=[SparseCategoricalCrossentropy(
+        from_logits=True), BinaryCrossentropy(
+        from_logits=True)], metrics=['accuracy', 'binary_crossentropy'])
     model.summary()
 
     history = model.fit(train_ds, epochs=args.epoch, batch_size=args.batch_size,

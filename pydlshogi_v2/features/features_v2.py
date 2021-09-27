@@ -103,7 +103,7 @@ class FeaturesV2():
             # 持ち駒
             move_direction = len(MOVE_DIRECTION) + koma - 1
 
-        move_label = 9 * 9 * move_direction + move_to
+        move_label = MOVE_DIRECTION_LABEL_NUM * move_to + move_direction
 
         return move_label
 

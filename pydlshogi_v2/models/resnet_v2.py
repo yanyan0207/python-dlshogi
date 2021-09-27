@@ -36,7 +36,6 @@ def createModel(blocks=5) -> Model:
         x = residualBlock(x)
     x = Conv2D(27, kernel_size=(1, 1),
                activation='relu', use_bias=False)(x)
-    x = Permute((3, 1, 2))(x)
     x = Flatten()(x)
     x = BiasLayer()(x)
     outputs = x

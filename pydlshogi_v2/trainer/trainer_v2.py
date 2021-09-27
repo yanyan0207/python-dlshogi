@@ -5,7 +5,7 @@ from tensorflow.keras import optimizers
 from tensorflow.keras import losses
 from tensorflow.python.data.ops.dataset_ops import AUTOTUNE
 
-from pydlshogi_v2.features.features_v2 import FeaturesV2
+from pydlshogi_v2.features.features_v1 import FeaturesV1
 from pydlshogi_v2.features.position_list import readPositionListCsv
 from pydlshogi_v2.models import resnet, modelUtil
 
@@ -13,12 +13,15 @@ import sys
 import os
 import pandas as pd
 import tensorflow as tf
-from tensorflow.keras.optimizers import SGD
+from tensorflow.keras.optimizers import SGD, Adam
 from tensorflow.keras.losses import SparseCategoricalCrossentropy
 from tensorflow.python.keras.callbacks import ModelCheckpoint
+from tensorflow_addons.optimizers import RectifiedAdam
 
 
 def main(args):
+    print(args)
+
     parser = ArgumentParser()
     parser.add_argument('train_position_list_csv')
     parser.add_argument('test_position_list_csv')
@@ -29,6 +32,12 @@ def main(args):
     parser.add_argument('--test_max_num', type=int)
     parser.add_argument('--min_move_num', type=int)
     parser.add_argument('--model')
+    parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--optimizer', default='sgd')
+    parser.add_argument('--moment', type=float, default=0.0)
+    parser.add_argument('--nesterov', action='store_true')
+    parser.add_argument('--learning_rate', type=float, default=0.01)
+    parser.add_argument('--total_steps', type=int, default=0)
 
     args = parser.parse_args(args)
     df_train = readPositionListCsv(
@@ -41,7 +50,7 @@ def main(args):
     pos_columns = [c for c in df_train.columns if c[:2] == 'P_']
     move_columns = [c for c in df_train.columns if c[:3] == 'MV_']
 
-    features = FeaturesV2()
+    features = FeaturesV1()
 
     train_ds = tf.data.Dataset.from_tensor_slices(
         (df_train.loc[:, pos_columns], features.moveArrayListToLabel(df_train.loc[:, move_columns].values)))
@@ -50,7 +59,7 @@ def main(args):
 
     train_ds = (train_ds
                 .shuffle(len(train_ds))
-                .batch(32)
+                .batch(args.batch_size)
                 .map(lambda x, y: (tf.numpy_function(func=features.positionListToFeature, inp=[x], Tout=tf.int8), y))
                 .prefetch(buffer_size=AUTOTUNE)
                 )
@@ -67,9 +76,21 @@ def main(args):
                                          verbose=1))
 
     model = resnet.createModel()
-    model.compile(optimizer=SGD(learning_rate=0.01), loss=SparseCategoricalCrossentropy(
+
+    if args.optimizer == 'sgd':
+        optimizer = SGD(learning_rate=args.learning_rate,
+                        momentum=args.moment, nesterov=args.nesterov)
+    elif args.optimizer == 'adam':
+        optimizer = Adam(learning_rate=args.learning_rate)
+    elif args.optimizer == 'radam':
+        optimizer = RectifiedAdam(
+            learning_rate=args.learning_rate, total_steps=args.total_steps)
+    else:
+        raise('unknown optimzer:' + args.optimizer)
+
+    model.compile(optimizer=optimizer, loss=SparseCategoricalCrossentropy(
         from_logits=True), metrics=['accuracy'])
-    history = model.fit(train_ds, epochs=args.epoch, batch_size=32,
+    history = model.fit(train_ds, epochs=args.epoch, batch_size=args.batch_size,
                         validation_data=test_ds, callbacks=callbacks, verbose=1)
     if args.model:
         model.save(os.path.join(args.model, 'model'))

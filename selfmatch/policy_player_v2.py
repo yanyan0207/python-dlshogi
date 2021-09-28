@@ -2,11 +2,12 @@ import shogi
 import shogi.CSA
 import game
 import os
+import sys
 
 if False:
     os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
-from pydlshogi.features import *
+from pydlshogi_v2.features.features_v2 import FeaturesV2
 import scipy as sp
 import numpy as np
 import glob
@@ -32,6 +33,7 @@ class PolicyPlayer(game.Player):
         self.weightsPath = None
         self.model: keras.models.model = None
         self.strategy = 'greedy'
+        self.features = None
 
     def setConfig(self, key, value):
         if key == 'ModelPath':
@@ -48,6 +50,9 @@ class PolicyPlayer(game.Player):
         model.call = tf.function(
             model.call, experimental_relax_shapes=True)
         self.model = model
+        self.features = FeaturesV2()
+        board = shogi.Board()
+        self.bestMove(board, {move for move in board.legal_moves})
 
     def startMatch(self):
         pass
@@ -57,31 +62,36 @@ class PolicyPlayer(game.Player):
         if len(legal_moves) == 0:
             return None
 
+        # ボードから特長量を取得
         time_feature.start()
-        features = make_input_features_from_board(board)
+        features = self.features.boardToFeature(board)
         time_feature.end()
 
+        # policy予測
         time_predict.start()
-        logits = np.array(self.model(features, training=False)[0])
+        pred_logits = np.array(self.model(features, training=False)[0][0])
         time_predict.end()
 
+        # 合法手の一覧をラベルに変換
         time_label.start()
         legal_moves = list(legal_moves)
-        logical_move_labels = [make_output_label(
-            move, board.turn) for move in legal_moves]
+        logical_move_labels = [self.features.boardMoveToLabel(
+            move, board) for move in legal_moves]
         time_label.end()
+
+        # 合法種の一覧の予測値を取得
         time_logits.start()
-        logical_move_logits = [logits[label]
-                               for label in logical_move_labels]
+        pred_logits_in_logical_moves = [pred_logits[label]
+                                        for label in logical_move_labels]
         time_logits.end()
 
         if self.strategy == 'greedy':
             time_find_max.start()
-            best_move = legal_moves[np.argmax(logical_move_logits)]
+            best_move = legal_moves[np.argmax(pred_logits_in_logical_moves)]
             time_find_max.end()
         elif self.strategy == 'softmax':
             time_softmax.start()
-            probabilities = sp.special.softmax(logical_move_logits)
+            probabilities = sp.special.softmax(pred_logits_in_logical_moves)
             time_softmax.end()
             time_find_max.start()
             best_move = legal_moves[np.random.choice(
@@ -95,6 +105,7 @@ class PolicyPlayer(game.Player):
 
 
 if __name__ == "__main__":
+    print(sys.argv)
     time_kif = TimeLog("kif")
 
     class Standing:
@@ -143,7 +154,7 @@ if __name__ == "__main__":
     parser.add_argument('model_root', nargs='*')
     args = parser.parse_args()
 
-    model_list = args.model_root
+    model_list = [os.path.abspath(path) for path in args.model_root]
 
     player_list = []
     for model_root in model_list:
@@ -161,8 +172,9 @@ if __name__ == "__main__":
                 try:
                     player.prepare()
                     player_list.append(player)
-                except:
-                    print('error', model_root, os.path.basename(ckpt))
+                except BaseException as e:
+                    print('error v2', model_root, os.path.basename(ckpt), e)
+                    raise e
 
     player_list += [game.Player()]
     player_match_list = [(player, player2)

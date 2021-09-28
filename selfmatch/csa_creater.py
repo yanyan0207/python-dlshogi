@@ -45,6 +45,8 @@ def createKif(board: shogi.Board, ofile: str, gameResult: GameResult):
         reason = 'sennichite'
     elif gameResult.reason == Reason.MAX_MOVE:
         reason = 'max_moves'
+    else:
+        raise RuntimeError('unkown gameResult.reason', gameResult.reason)
 
     if gameResult.result == Result.BLACK_WIN:
         first = f'{gameResult.black_player_name} win'

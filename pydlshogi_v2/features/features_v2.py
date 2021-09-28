@@ -63,12 +63,18 @@ class FeaturesV2():
         return hand_pieces
 
     def boardToFeature(self, board: shogi.Board):
-        return self.positionListToFeature(np.expand_dims(position_list.boardToSingleBoard(board), axis=0))
+        single_board = np.expand_dims(
+            position_list.boardToSingleBoard(board), axis=0)
+        return (self.positionListToFeature(single_board),
+                self.handsToFeature(single_board))
 
     def moveArrayListToLabel(self, data):
         return np.array([self.moveToLabel(d[0], d[1], d[2], d[3]) for d in data], dtype=np.int16)
 
-    def moveToLabel(self, move_from, move_to, promotion, koma):
+    def boardMoveToLabel(self, move, board):
+        return self.moveToLabel(*position_list.moveToArray(move, board))
+
+    def moveToLabel(self, move_from, move_to, promotion, koma, captured):
         # move direction
         if move_from >= 0:
             to_y, to_x = divmod(move_to, 9)

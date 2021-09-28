@@ -19,7 +19,7 @@ from tensorflow.python.keras.callbacks import ModelCheckpoint
 from tensorflow_addons.optimizers import RectifiedAdam
 
 
-def createDataSet(df, batch_size, features: FeaturesV2):
+def createDataSet(df, batch_size, features: FeaturesV2, shuffle=True):
     pos_columns = [c for c in df.columns if c[:2] == 'P_']
     move_columns = [c for c in df.columns if c[:3] == 'MV_']
 
@@ -39,7 +39,7 @@ def createDataSet(df, batch_size, features: FeaturesV2):
     )
 
     ds = (ds
-          .shuffle(len(ds))
+          .shuffle(len(ds) if shuffle else 1)
           .batch(batch_size)
           .map(lambda x, y: ((tf.numpy_function(func=features.positionListToFeature, inp=[x], Tout=tf.int8),
                               tf.numpy_function(func=features.handsToFeature, inp=[

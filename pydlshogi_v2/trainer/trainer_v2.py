@@ -106,7 +106,7 @@ def main(args):
 
     model.compile(optimizer=optimizer, loss=[SparseCategoricalCrossentropy(
         from_logits=True), BinaryCrossentropy(
-        from_logits=True)], metrics=['accuracy', 'binary_crossentropy'])
+        from_logits=True)], metrics='accuracy')
     model.summary()
 
     history = model.fit(train_ds, epochs=args.epoch, batch_size=args.batch_size,

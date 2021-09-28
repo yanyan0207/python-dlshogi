@@ -20,12 +20,12 @@ def residualBlock(input):
 
 def createModel(blocks=5) -> Model:
     # 盤上のコマ
-    inputs_board = Input(shape=(9, 9, 28), name="digits")
+    inputs_board = Input(shape=(9, 9, 28), name="input_board")
     x_board = Conv2D(ch, kernel_size=(3, 3),
                      activation='relu', padding='same')(inputs_board)
 
     # 駒台
-    inputs_hands = Input(shape=(76,))
+    inputs_hands = Input(shape=(76,), name="input_hands")
     x_hands = Reshape((-1, 1, 76))(inputs_hands)
     x_hands = Conv2D(ch, kernel_size=(1, 1),
                      activation='relu', padding='same')(x_hands)
@@ -38,18 +38,18 @@ def createModel(blocks=5) -> Model:
 
     # policy
     x_policy = Conv2D(27, kernel_size=(1, 1),
-                      activation='relu', use_bias=False)(x)
+                      activation='relu', use_bias=False, name="policy_conv2d")(x)
     x_policy = Flatten()(x_policy)
-    x_policy = BiasLayer()(x_policy)
+    x_policy = BiasLayer(name="policy_output")(x_policy)
     outputs_policy = x_policy
 
     # value
     x_value = Conv2D(27, kernel_size=(1, 1),
-                     activation='relu', use_bias=False)(x)
+                     activation='relu', use_bias=False, name="value_conv2d")(x)
     x_value = BatchNormalization()(x_value)
     x_value = Flatten()(x_value)
     x_value = Dense(fcl, activation='relu')(x_value)
-    x_value = Dense(1)(x_value)
+    x_value = Dense(1, name="value_output")(x_value)
     outputs_value = x_value
     model = Model(inputs=[inputs_board, inputs_hands],
                   outputs=[outputs_policy, outputs_value])

@@ -3,6 +3,9 @@ import shogi.CSA
 import game
 import os
 import sys
+import itertools
+import re
+import glob
 
 if False:
     os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
@@ -10,8 +13,6 @@ if False:
 from pydlshogi_v2.features.features_v2 import FeaturesV2
 import scipy as sp
 import numpy as np
-import glob
-import math
 import csa_creater
 import tensorflow as tf
 from pydlshogi.time_log import TimeLog
@@ -154,42 +155,49 @@ if __name__ == "__main__":
     parser.add_argument('model_root', nargs='*')
     args = parser.parse_args()
 
+    # Modelルートパスのリスト
     model_list = [os.path.abspath(path) for path in args.model_root]
 
-    player_list = []
-    for model_root in model_list:
-        ckpt_index_list = glob.glob(os.path.join(
-            model_root, 'weights*.ckpt.index'))
+    # チェックポイントのリスト
+    ckpt_index_list = [glob.glob(os.path.join(
+        model_root, 'weights*.ckpt.index')) for model_root in model_list]
+    ckpt_index_list = list(itertools.chain.from_iterable(ckpt_index_list))
 
-        for strategy in ['greedy', 'softmax']:
-            for ckpt in ckpt_index_list:
-                player = PolicyPlayer(
-                    f'{strategy}_{os.path.basename(model_root)}_{os.path.basename(ckpt)}')
-                player.setConfig(
-                    'ModelPath', os.path.join(model_root, 'model'))
-                player.setConfig('WeightsPath', ckpt[:-6])
-                player.setConfig('Strategy', strategy)
-                try:
-                    player.prepare()
-                    player_list.append(player)
-                except BaseException as e:
-                    print('error v2', model_root, os.path.basename(ckpt), e)
-                    raise e
+    # チェックポイントをlossの少ない順にソート
+    ckpt_index_list.sort(key=lambda x: float(
+        re.findall(r'(\d+\.\d+)\.ckpt\.index', x)[0]))
+
+    player_list = []
+    for strategy in ['greedy', 'softmax']:
+        for ckpt in ckpt_index_list:
+            model_root = os.path.dirname(ckpt)
+            player = PolicyPlayer(
+                f'{strategy}_{os.path.basename(model_root)}_{os.path.basename(ckpt)}')
+            player.setConfig(
+                'ModelPath', os.path.join(model_root, 'model'))
+            player.setConfig('WeightsPath', ckpt[:-6])
+            player.setConfig('Strategy', strategy)
+            try:
+                player.prepare()
+                player_list.append(player)
+            except BaseException as e:
+                print('error v2', model_root, os.path.basename(ckpt), e)
+                raise e
 
     player_list += [game.Player()]
     player_match_list = [(player, player2)
                          for player in player_list for player2 in player_list if player != player2]
 
     standing_list = StandingList(player_list)
-    for player, player2 in player_match_list:
+    for num, (player, player2) in enumerate(player_match_list):
         match = game.Game(player, player2)
         match.setDisplayKif(False)
         result = match.playMatch()
 
         time_kif.start()
-        print(result.black_player_name, result.white_player_name,
-              result.move_num, result.result, result.reason)
+        print(f'{num + 1}/{len(player_match_list)} {result.black_player_name} {result.white_player_name} {result.move_num} {result.result} {result.reason}')
         standing_list.addResult(result)
+
         ofile = f'{result.startTime.strftime("%Y%m%d-%H%M%S")}' \
             + f'_{result.black_player_name}' \
             + f'_{result.white_player_name}.csa'

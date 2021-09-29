@@ -71,16 +71,19 @@ def readCsaToPostion(kifu, fileinfo):
 
 def readPositionListCsv(path, min_rate=None, max_num=None, min_move_num=None):
     columns = pd.read_csv(path, index_col=0, nrows=0).columns.tolist()
-    df = pd.read_csv(path, dtype={c: str if (
-        c == 'FI_END_RESULT' or c == 'FI_END_REASON') else np.int8 for c in columns})
+    df = pd.read_csv(path, dtype={c:
+                                  str if (c == 'FI_END_RESULT' or c == 'FI_END_REASON') else
+                                  np.int32 if (c.startswith('FI'))
+                                  else np.int8 for c in columns})
 
     # 手数でフィルタリング
     if min_move_num:
-        df = df[df.FI_move_num >= min_move_num]
+        df = df[df.FI_END_MOVE_NUM >= min_move_num]
 
     # レートでフィルタリング
     df['both_min_rate'] = df.loc[:, [
         'FI_BLACK_RATE', 'FI_WHITE_RATE']].min(axis=1)
+
     if min_rate:
         df = df[df.both_min_rate >= min_rate]
 

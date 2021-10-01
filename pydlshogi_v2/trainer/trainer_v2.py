@@ -19,12 +19,13 @@ from tensorflow.python.keras.callbacks import ModelCheckpoint
 from tensorflow_addons.optimizers import RectifiedAdam
 
 
-def createDataSet(df, batch_size, features: FeaturesV2, shuffle=True):
+def createDataSet(df, batch_size, features: FeaturesV2, shuffle=True, only_toryo=True):
     pos_columns = [c for c in df.columns if c[:2] == 'P_']
     move_columns = [c for c in df.columns if c[:3] == 'MV_']
 
     # TORYOのみ使用する
-    df = df[df.FI_END_REASON == '%TORYO']
+    if only_toryo:
+        df = df[df.FI_END_REASON == '%TORYO']
 
     # 結果を作成
     result = np.zeros(len(df), dtype=np.int8)

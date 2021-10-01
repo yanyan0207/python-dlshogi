@@ -168,7 +168,8 @@ if __name__ == "__main__":
         re.findall(r'(\d+\.\d+)\.ckpt\.index', x)[0]))
 
     player_list = []
-    for strategy in ['greedy', 'softmax']:
+#    for strategy in ['greedy', 'softmax']:
+    for strategy in ['greedy']:
         for ckpt in ckpt_index_list:
             model_root = os.path.dirname(ckpt)
             player = PolicyPlayer(
@@ -180,6 +181,7 @@ if __name__ == "__main__":
             try:
                 player.prepare()
                 player_list.append(player)
+                print(player.name)
             except BaseException as e:
                 print('error v2', model_root, os.path.basename(ckpt), e)
                 raise e

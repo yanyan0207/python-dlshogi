@@ -27,8 +27,8 @@ MOVE_DIRECTION = [
     UP_PROMOTE, UP_LEFT_PROMOTE, UP_RIGHT_PROMOTE, LEFT_PROMOTE, RIGHT_PROMOTE, DOWN_PROMOTE, DOWN_LEFT_PROMOTE, DOWN_RIGHT_PROMOTE, UP2_LEFT_PROMOTE, UP2_RIGHT_PROMOTE
 ] = range(20)
 
-piece_index_list = {'p': 0, 'l': 1, 'n': 2,
-                    's': 3, 'b': 4, 'r': 5, 'g': 6, 'k': 7}
+piece_index_list = {'P': 0, 'L': 1, 'N': 2,
+                    'S': 3, 'B': 4, 'R': 5, 'G': 6, 'K': 7}
 mochikoma_max_list = [18, 4, 4, 4, 2, 2, 4]
 mochikoma_start_list = [0, 18, 22, 26, 30, 32, 34, 38]
 
@@ -50,9 +50,10 @@ def sfenBoardToFeature(sfen_board_list):
             elif c == '+':
                 nari = True
             else:
-                piece = (14 if c.isupper() else 0) + \
-                    (8 if nari else 0) + piece_index_list[c.lower()]
+                piece = (0 if c.isupper() else 14) + \
+                    (8 if nari else 0) + piece_index_list[c.upper()]
                 board_list[sfen_index, row, col, piece] += 1
+                col += 1
                 nari = False
 
     return board_list
@@ -72,10 +73,10 @@ def sfenHandsToFeature(sfen_hand_list):
             elif c.isdecimal():
                 num = int(c)
             else:
-                p_index = piece_index_list[c.lower()]
+                p_index = piece_index_list[c.upper()]
                 for i in range(num):
                     hand_list[sfen_index,
-                              (mochikoma_start_list[-1] if c.isupper() else 0) +
+                              (0 if c.isupper() else mochikoma_start_list[-1]) +
                               mochikoma_start_list[p_index] + i] += 1
 
                 num = 1
@@ -86,7 +87,7 @@ def sfenHandsToFeature(sfen_hand_list):
 
 
 def position(pos):
-    return ord(pos[1]) - ord('a'), int(pos[0]) - 1
+    return ord(pos[1]) - ord('a'), 9 - int(pos[0])
 
 
 def moveToDirection(rowmove, colmove):
@@ -105,7 +106,7 @@ def moveToDirection(rowmove, colmove):
 def moveToLabel(move):
     if move[1] == '*':
         row, col = position(move[2:4])
-        return (row * 9 + col) * 27 + 20 + piece_index_list[move[0].lower()]
+        return (row * 9 + col) * 27 + 20 + piece_index_list[move[0].upper()]
     else:
         fromrow, fromcol = position(move[0:2])
         torow, tocol = position(move[2:4])

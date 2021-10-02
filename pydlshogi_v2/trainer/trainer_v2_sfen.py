@@ -17,7 +17,7 @@ import pandas as pd
 import tensorflow as tf
 import numpy as np
 from tensorflow.keras.optimizers import SGD, Adam
-from tensorflow.keras.losses import SparseCategoricalCrossentropy, BinaryCrossentropy
+from tensorflow.keras.losses import CategoricalCrossentropy, BinaryCrossentropy
 from tensorflow.python.keras.callbacks import ModelCheckpoint
 from tensorflow_addons.optimizers import RectifiedAdam
 
@@ -93,6 +93,8 @@ def moveToDirection(rowmove, colmove):
         return DOWN if rowmove > 0 else UP
     elif rowmove == -2:
         return UP2_RIGHT if colmove > 0 else UP2_LEFT
+    else:
+        assert(False)
 
 
 def moveToLabel(move):
@@ -105,38 +107,37 @@ def moveToLabel(move):
         return (torow * 9 + tocol) * 27 + moveToDirection(torow - fromrow, tocol - fromcol) + (10 if len(move) == 5 else 0)
 
 
-def sfenMoveToFeature(moves_list):
-    move_label_list = np.zeros(moves_list.shape[0], dtype=np.int16)
-    for index, moves in enumerate(moves_list):
-        data = json.loads(moves)
-        move_list, num_list = list(zip(*[(k, v) for k, v in data.items()]))
+def sfenMoveToFeature(moves):
+    move_labels = np.zeros(81*27, dtype=np.float32)
 
-        move = move_list[np.argmax(num_list)]
-        move_label_list[index] = moveToLabel(move)
-    return move_label_list
+    # json形式に変換
+    data: dict = json.loads(tf.compat.as_str_any(moves))
 
+    # 総計を計算
+    all_nums = np.sum([num for num in data.values()])
 
-def df_to_dataset(dataframe, shuffle=True, batch_size=32):
-    dataframe = dataframe.copy()
+    # すべての手の確率を返す
+    for move, num in data.items():
+        move_labels[moveToLabel(move)] = num / all_nums
 
-    ds = tf.data.Dataset.from_tensor_slices((dict(dataframe), ))
-    if shuffle:
-        ds = ds.shuffle(buffer_size=len(dataframe))
-    ds = ds.batch(batch_size)
-    return ds
+    return move_labels
 
 
 def createDataSet(df, batch_size, features: FeaturesV2, shuffle=True, only_toryo=True):
-    win = df.win
-    moves = sfenMoveToFeature(df.SFEN_MOVE)
+    def moveFuncWrapper(x):
+        label = tf.numpy_function(sfenMoveToFeature, [x], tf.float32)
+        label.set_shape(tf.TensorShape([81*27]))
+        return label
+
     ds = tf.data.Dataset.from_tensor_slices(
-        (df.SFEN_BOARD, df.SFEN_HANDS, (moves, win)))
+        (df.SFEN_BOARD, df.SFEN_HANDS, df.SFEN_MOVE, df.win))
 
     ds = (ds
           .shuffle(len(ds) if shuffle else 1)
-          .map(lambda b, h, y: ((tf.numpy_function(func=sfenBoardToFeature, inp=[b], Tout=tf.int8),
-                                 tf.numpy_function(func=sfenHandsToFeature, inp=[h], Tout=tf.int8)),
-                                y), num_parallel_calls=tf.data.AUTOTUNE, deterministic=False
+          .map(lambda b, h, m, w: ((tf.numpy_function(func=sfenBoardToFeature, inp=[b], Tout=tf.int8),
+                                   tf.numpy_function(func=sfenHandsToFeature, inp=[h], Tout=tf.int8)),
+                                   (moveFuncWrapper(m), w)),
+               num_parallel_calls=tf.data.AUTOTUNE, deterministic=False
                )
           .batch(batch_size)
           .prefetch(buffer_size=AUTOTUNE)
@@ -197,7 +198,7 @@ def main(args):
     else:
         raise('unknown optimzer:' + args.optimizer)
 
-    model.compile(optimizer=optimizer, loss=[SparseCategoricalCrossentropy(
+    model.compile(optimizer=optimizer, loss=[CategoricalCrossentropy(
         from_logits=True), BinaryCrossentropy(
         from_logits=True)], metrics='accuracy')
     model.summary()

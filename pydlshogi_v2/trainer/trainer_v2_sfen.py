@@ -27,10 +27,11 @@ MOVE_DIRECTION = [
     UP_PROMOTE, UP_LEFT_PROMOTE, UP_RIGHT_PROMOTE, LEFT_PROMOTE, RIGHT_PROMOTE, DOWN_PROMOTE, DOWN_LEFT_PROMOTE, DOWN_RIGHT_PROMOTE, UP2_LEFT_PROMOTE, UP2_RIGHT_PROMOTE
 ] = range(20)
 
-piece_index_list = {'P': 0, 'L': 1, 'N': 2,
-                    'S': 3, 'B': 4, 'R': 5, 'G': 6, 'K': 7}
-mochikoma_max_list = [18, 4, 4, 4, 2, 2, 4]
-mochikoma_start_list = [0, 18, 22, 26, 30, 32, 34, 38]
+piece_index_list = {'P': 0, 'L': 1, 'N': 2, 'S': 3, 'G': 4, 'B': 5, 'R': 6, 'K': 7,
+                    '+P': 8, '+L': 9, '+N': 10, '+S': 11, '+B': 12, '+R': 13}
+
+#mochikoma_max_list = [18, 4, 4, 4, 2, 2, 4]
+mochikoma_start_list = [0, 18, 22, 26, 30, 34, 36, 38]
 
 
 def sfenBoardToFeature(sfen_board):
@@ -39,7 +40,7 @@ def sfenBoardToFeature(sfen_board):
     sfen_board: str
     row = 0
     col = 0
-    nari = False
+    nari = ''
     for c in tf.compat.as_str_any(sfen_board):
         if c == '/':
             row += 1
@@ -47,13 +48,13 @@ def sfenBoardToFeature(sfen_board):
         elif c.isdecimal():
             col += int(c)
         elif c == '+':
-            nari = True
+            nari = '+'
         else:
-            piece = (0 if c.isupper() else 14) + \
-                (8 if nari else 0) + piece_index_list[c.upper()]
+            piece = (0 if c.isupper() else len(piece_index_list)) + \
+                piece_index_list[f'{nari}{c.upper()}']
             board_list[row, col, piece] += 1
             col += 1
-            nari = False
+            nari = ''
 
     return board_list
 

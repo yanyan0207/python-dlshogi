@@ -69,7 +69,7 @@ class FeaturesV2():
                 self.handsToFeature(single_board))
 
     def moveArrayListToLabel(self, data):
-        return np.array([self.moveToLabel(*d[0:5].tolist()) for d in data], dtype=np.int16)
+        return np.array([self.moveToLabel(*d[0:5].tolist()) for d in data], dtype=np.int32)
 
     def boardMoveToLabel(self, move, board):
         return self.moveToLabel(*position_list.moveToArray(move, board))

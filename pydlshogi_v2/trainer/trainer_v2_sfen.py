@@ -35,7 +35,7 @@ piece_index_list = {'P': 1, 'L': 2, 'N': 3, 'S': 4, 'G': 5, 'B': 6, 'R': 7, 'K':
 
 
 def sfenBoardAndHandToSingleBoard(sfen_board, sfen_hand):
-    single_board = np.zeros(81+14, dtype=np.int8)
+    single_board = np.zeros(81 + 14, dtype=np.int8)
 
     nari = ''
     index = 0
@@ -131,15 +131,13 @@ def createDataSet(df: pd.DataFrame, batch_size, features: FeaturesV2, shuffle=Tr
         label.set_shape(tf.TensorShape([None, 81*27]))
         return label
 
-    print('sfenBoardAndHandToSingleBoard')
     # ポジションリスト
-    position_list = np.asarray(Parallel(n_jobs=-1)(delayed(sfenBoardAndHandToSingleBoard)(sfen_board, sfen_hand)
-                               for sfen_board, sfen_hand in zip(df['SFEN_BOARD'], df['SFEN_HANDS'])), dtype=np.int8)
+    position_list = [sfenBoardAndHandToSingleBoard(
+        sfen_board, sfen_hand) for sfen_board, sfen_hand in zip(df.SFEN_BOARD, df.SFEN_HANDS)]
 
-    print('sfenMoveToDict')
     # 指し手リスト
-    moves_dict_list = Parallel(
-        n_jobs=-1)(delayed(sfenMoveToDictJson)(moves) for moves in df.SFEN_MOVE)
+    moves_dict_list = [sfenMoveToDictJson(
+        sfen_move) for sfen_move in df.SFEN_MOVE]
 
     print('from_tensor_slices')
     ds = tf.data.Dataset.from_tensor_slices(

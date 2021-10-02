@@ -33,56 +33,48 @@ mochikoma_max_list = [18, 4, 4, 4, 2, 2, 4]
 mochikoma_start_list = [0, 18, 22, 26, 30, 32, 34, 38]
 
 
-def sfenBoardToFeature(sfen_board_list):
-    board_list = np.zeros((sfen_board_list.shape[0], 9, 9, 28), dtype=np.int8)
+def sfenBoardToFeature(sfen_board):
+    board_list = np.zeros((9, 9, 28), dtype=np.int8)
 
-    for sfen_index, sfen_board in enumerate(sfen_board_list):
-        sfen_board: str
-        row = 0
-        col = 0
-        nari = False
-        for c in tf.compat.as_str_any(sfen_board):
-            if c == '/':
-                row += 1
-                col = 0
-            elif c.isdecimal():
-                col += int(c)
-            elif c == '+':
-                nari = True
-            else:
-                piece = (0 if c.isupper() else 14) + \
-                    (8 if nari else 0) + piece_index_list[c.upper()]
-                board_list[sfen_index, row, col, piece] += 1
-                col += 1
-                nari = False
+    sfen_board: str
+    row = 0
+    col = 0
+    nari = False
+    for c in tf.compat.as_str_any(sfen_board):
+        if c == '/':
+            row += 1
+            col = 0
+        elif c.isdecimal():
+            col += int(c)
+        elif c == '+':
+            nari = True
+        else:
+            piece = (0 if c.isupper() else 14) + \
+                (8 if nari else 0) + piece_index_list[c.upper()]
+            board_list[row, col, piece] += 1
+            col += 1
+            nari = False
 
     return board_list
 
 
-def sfenHandsToFeature(sfen_hand_list):
-    hand_list = np.zeros((sfen_hand_list.shape[0], 76), dtype=np.int8)
+def sfenHandsToFeature(sfen_hand):
+    hand_list = np.zeros(76, dtype=np.int8)
 
-    BREAK_FLAG = False
-    for sfen_index, sfen_hand in enumerate(sfen_hand_list):
-        sfen_hand: str
-
-        num = 1
-        for c in tf.compat.as_str_any(sfen_hand):
-            if c == '-':
-                break
-            elif c.isdecimal():
-                num = int(c)
-            else:
-                p_index = piece_index_list[c.upper()]
-                for i in range(num):
-                    hand_list[sfen_index,
-                              (0 if c.isupper() else mochikoma_start_list[-1]) +
-                              mochikoma_start_list[p_index] + i] += 1
-
-                num = 1
-        if BREAK_FLAG:
-            BREAK_FLAG = False
+    num = 1
+    for c in tf.compat.as_str_any(sfen_hand):
+        if c == '-':
             break
+        elif c.isdecimal():
+            num = int(c)
+        else:
+            p_index = piece_index_list[c.upper()]
+            for i in range(num):
+                hand_list[
+                    (0 if c.isupper() else mochikoma_start_list[-1]) +
+                    mochikoma_start_list[p_index] + i] += 1
+
+            num = 1
     return hand_list
 
 
@@ -142,11 +134,11 @@ def createDataSet(df, batch_size, features: FeaturesV2, shuffle=True, only_toryo
 
     ds = (ds
           .shuffle(len(ds) if shuffle else 1)
-          .batch(batch_size)
           .map(lambda b, h, y: ((tf.numpy_function(func=sfenBoardToFeature, inp=[b], Tout=tf.int8),
                                  tf.numpy_function(func=sfenHandsToFeature, inp=[h], Tout=tf.int8)),
-                                y)
+                                y), num_parallel_calls=tf.data.AUTOTUNE, deterministic=False
                )
+          .batch(batch_size)
           .prefetch(buffer_size=AUTOTUNE)
           )
     return ds

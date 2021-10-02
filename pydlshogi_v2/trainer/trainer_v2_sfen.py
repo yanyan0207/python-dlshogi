@@ -5,9 +5,10 @@ from numpy.core.defchararray import isupper
 from tensorflow.keras import optimizers
 from tensorflow.keras import losses
 from tensorflow.python.data.ops.dataset_ops import AUTOTUNE
+from tensorflow.python.util.compat import as_str
 
 from pydlshogi_v2.features.features_v2 import FeaturesV2
-from pydlshogi_v2.features.position_list import readPositionListCsv
+from pydlshogi_v2.features.position_list import boardToSingleBoard, readPositionListCsv
 from pydlshogi_v2.models import resnet_v2, modelUtil
 
 import sys
@@ -21,46 +22,36 @@ from tensorflow.keras.losses import CategoricalCrossentropy, BinaryCrossentropy
 from tensorflow.python.keras.callbacks import ModelCheckpoint
 from tensorflow_addons.optimizers import RectifiedAdam
 
+from joblib import Parallel, delayed
+
 # 移動の定数
 MOVE_DIRECTION = [
     UP, UP_LEFT, UP_RIGHT, LEFT, RIGHT, DOWN, DOWN_LEFT, DOWN_RIGHT, UP2_LEFT, UP2_RIGHT,
     UP_PROMOTE, UP_LEFT_PROMOTE, UP_RIGHT_PROMOTE, LEFT_PROMOTE, RIGHT_PROMOTE, DOWN_PROMOTE, DOWN_LEFT_PROMOTE, DOWN_RIGHT_PROMOTE, UP2_LEFT_PROMOTE, UP2_RIGHT_PROMOTE
 ] = range(20)
 
-piece_index_list = {'P': 0, 'L': 1, 'N': 2, 'S': 3, 'G': 4, 'B': 5, 'R': 6, 'K': 7,
-                    '+P': 8, '+L': 9, '+N': 10, '+S': 11, '+B': 12, '+R': 13}
-
-#mochikoma_max_list = [18, 4, 4, 4, 2, 2, 4]
-mochikoma_start_list = [0, 18, 22, 26, 30, 34, 36, 38]
+piece_index_list = {'P': 1, 'L': 2, 'N': 3, 'S': 4, 'G': 5, 'B': 6, 'R': 7, 'K': 8,
+                    '+P': 9, '+L': 10, '+N': 11, '+S': 12, '+B': 13, '+R': 14}
 
 
-def sfenBoardToFeature(sfen_board):
-    board_list = np.zeros((9, 9, 28), dtype=np.int8)
+def sfenBoardAndHandToSingleBoard(sfen_board, sfen_hand):
+    single_board = np.zeros(81+14, dtype=np.int8)
 
-    sfen_board: str
-    row = 0
-    col = 0
     nari = ''
+    index = 0
     for c in tf.compat.as_str_any(sfen_board):
         if c == '/':
-            row += 1
-            col = 0
+            pass
         elif c.isdecimal():
-            col += int(c)
+            index += int(c)
         elif c == '+':
             nari = '+'
         else:
-            piece = (0 if c.isupper() else len(piece_index_list)) + \
+            piece = (1 if c.isupper() else -1) * \
                 piece_index_list[f'{nari}{c.upper()}']
-            board_list[row, col, piece] += 1
-            col += 1
+            single_board[index] = piece
+            index += 1
             nari = ''
-
-    return board_list
-
-
-def sfenHandsToFeature(sfen_hand):
-    hand_list = np.zeros(76, dtype=np.int8)
 
     num = 1
     for c in tf.compat.as_str_any(sfen_hand):
@@ -70,13 +61,11 @@ def sfenHandsToFeature(sfen_hand):
             num = int(c)
         else:
             p_index = piece_index_list[c.upper()]
-            for i in range(num):
-                hand_list[
-                    (0 if c.isupper() else mochikoma_start_list[-1]) +
-                    mochikoma_start_list[p_index] + i] += 1
+            single_board[
+                (0 if c.isupper() else 7) + 81 + p_index - 1] = num
 
             num = 1
-    return hand_list
+    return single_board
 
 
 def position(pos):
@@ -101,11 +90,22 @@ def moveToDirection(rowmove, colmove):
 def moveToLabel(move):
     if move[1] == '*':
         row, col = position(move[2:4])
-        return (row * 9 + col) * 27 + 20 + piece_index_list[move[0].upper()]
+        return (row * 9 + col) * 27 + 20 + piece_index_list[move[0].upper()] - 1
     else:
         fromrow, fromcol = position(move[0:2])
         torow, tocol = position(move[2:4])
         return (torow * 9 + tocol) * 27 + moveToDirection(torow - fromrow, tocol - fromcol) + (10 if len(move) == 5 else 0)
+
+
+def sfenMoveToDictJson(moves):
+    # json形式に変換
+    data: dict = json.loads(tf.compat.as_str_any(moves))
+
+    # 総計を計算
+    all_nums = np.sum([num for num in data.values()])
+
+    # すべての手の確率を返す
+    return json.dumps({moveToLabel(move): num / all_nums for move, num in data.items()})
 
 
 def sfenMoveToFeature(moves):
@@ -114,33 +114,44 @@ def sfenMoveToFeature(moves):
     # json形式に変換
     data: dict = json.loads(tf.compat.as_str_any(moves))
 
-    # 総計を計算
-    all_nums = np.sum([num for num in data.values()])
-
     # すべての手の確率を返す
     for move, num in data.items():
-        move_labels[moveToLabel(move)] = num / all_nums
+        move_labels[int(move)] = num
 
     return move_labels
 
 
-def createDataSet(df, batch_size, features: FeaturesV2, shuffle=True, only_toryo=True):
+def sfenMoveListToFeatures(moves_list):
+    return np.asarray([sfenMoveToFeature(moves) for moves in moves_list])
+
+
+def createDataSet(df: pd.DataFrame, batch_size, features: FeaturesV2, shuffle=True, only_toryo=True):
     def moveFuncWrapper(x):
-        label = tf.numpy_function(sfenMoveToFeature, [x], tf.float32)
-        label.set_shape(tf.TensorShape([81*27]))
+        label = tf.numpy_function(sfenMoveListToFeatures, [x], tf.float32)
+        label.set_shape(tf.TensorShape([None, 81*27]))
         return label
 
+    print('sfenBoardAndHandToSingleBoard')
+    # ポジションリスト
+    position_list = np.asarray(Parallel(n_jobs=-1)(delayed(sfenBoardAndHandToSingleBoard)(sfen_board, sfen_hand)
+                               for sfen_board, sfen_hand in zip(df['SFEN_BOARD'], df['SFEN_HANDS'])), dtype=np.int8)
+
+    print('sfenMoveToDict')
+    # 指し手リスト
+    moves_dict_list = Parallel(
+        n_jobs=-1)(delayed(sfenMoveToDictJson)(moves) for moves in df.SFEN_MOVE)
+
+    print('from_tensor_slices')
     ds = tf.data.Dataset.from_tensor_slices(
-        (df.SFEN_BOARD, df.SFEN_HANDS, df.SFEN_MOVE, df.win))
+        (position_list, moves_dict_list, df.win))
 
     ds = (ds
           .shuffle(len(ds) if shuffle else 1)
-          .map(lambda b, h, m, w: ((tf.numpy_function(func=sfenBoardToFeature, inp=[b], Tout=tf.int8),
-                                   tf.numpy_function(func=sfenHandsToFeature, inp=[h], Tout=tf.int8)),
-                                   (moveFuncWrapper(m), w)),
-               num_parallel_calls=tf.data.AUTOTUNE, deterministic=False
-               )
           .batch(batch_size)
+          .map(lambda s, m, w: ((tf.numpy_function(func=features.positionListToFeature, inp=[s], Tout=tf.int8),
+                                 tf.numpy_function(func=features.handsToFeature, inp=[s], Tout=tf.int8),),
+                                (moveFuncWrapper(m), w)),
+               )
           .prefetch(buffer_size=AUTOTUNE)
           )
     return ds
@@ -165,7 +176,7 @@ def main(args):
     columns = pd.read_csv(args.train_position_list_csv,
                           nrows=0).columns.tolist()
     df_train = pd.read_csv(args.train_position_list_csv, dtype={
-                           c: float if c == 'win' else str for c in columns})
+        c: float if c == 'win' else str for c in columns})
     df_test = pd.read_csv(args.test_position_list_csv, dtype={
         c: float if c == 'win' else str for c in columns})
     df_train['win'] = df_train['win'].astype(np.int8)

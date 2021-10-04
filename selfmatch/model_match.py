@@ -1,4 +1,5 @@
 
+from pandas.core.series import Series
 import shogi.CSA
 import game
 import os
@@ -101,15 +102,60 @@ def gameMatch(num, allnum, player, player2, output_csa):
     return result
 
 
-def leagMatch(player_list) -> StandingList:
-    # 対戦リストを作成
-    player_match_list = [(player, player2)
-                         for player in player_list for player2 in player_list if player != player2]
+class LeagueMatch():
+    def __init__(self, old_results_path=None):
+        self.old_results_path = old_results_path
+        self.old_results = {}
+        if old_results_path and os.path.exists(old_results_path):
+            df = pd.read_csv(old_results_path)
+            for index, row in df.iterrows():
+                black_player: str = row['black_player']
+                white_player: str = row['white_player']
+                if not black_player.startswith('greedy') or not white_player.startswith('greedy'):
+                    continue
+                result = game.GameResult(
+                    game.Player(black_player), game.Player(white_player), row['start_time'])
+                result.setResult(game.Result(row['result']), game.Reason(row['reason']),
+                                 row['move_num'], row['end_time'])
+                self.old_results[f'{black_player}_{white_player}'] = result
 
-    standing_list = StandingList(player_list)
-    standing_list.addResultList([gameMatch(num+1, len(player_match_list), player, player2, args.output_csa)
-                                 for num, (player, player2) in enumerate(player_match_list)])
-    return standing_list
+    def leagueMatch(self, player_list, output_csa=False) -> StandingList:
+        # 対戦リストを作成
+        player_match_list: tuple(game.Player, game.Player) = [(player, player2)
+                                                              for player in player_list for player2 in player_list if player != player2]
+
+        # 対戦
+        results_list: list[game.GameResult] = []
+        for num, (player, player2) in enumerate(player_match_list):
+            if player.name.startswith('greedy') and player2.name.startswith('greedy'):
+                if f'{player.name}_{player2.name}' in self.old_results:
+                    result = self.old_results[f'{player.name}_{player2.name}']
+                else:
+                    result = gameMatch(num+1, len(player_match_list),
+                                       player, player2, output_csa)
+                    self.old_results[f'{player.name}_{player2.name}'] = result
+            else:
+                result = gameMatch(num+1, len(player_match_list),
+                                   player, player2, output_csa)
+
+            results_list.append(result)
+
+        # 結果キャッシュを更新
+        if self.old_results_path:
+            data = [{'black_player': result.black_player_name,
+                     'white_player': result.white_player_name,
+                    'start_time': result.startTime,
+                     'end_time': result.endTime,
+                     'result': result.result.value,
+                     'reason': result.reason.value,
+                     'move_num': result.move_num} for i, result in self.old_results.items()]
+            pd.concat({i: pd.Series(d) for i, d in enumerate(data)}, axis=1).T.to_csv(
+                self.old_results_path, index=False)
+
+        # 対戦結果を返す
+        standing_list = StandingList(player_list)
+        standing_list.addResultList(results_list)
+        return standing_list
 
 
 def outputModelMatchCsv(standing_list: StandingList, outfile):
@@ -129,25 +175,35 @@ if __name__ == "__main__":
 
     # モデル内で戦う
     for model_root in args.model_root:
-        model_match_csv = os.path.join(model_root, 'model_match.csv')
-        if os.path.exists(model_match_csv):
-            continue
-        standing_list = leagMatch(loadPlayerList(model_root))
-        outputModelMatchCsv(standing_list, model_match_csv)
+        try:
+            model_match_csv = os.path.join(model_root, 'model_match.csv')
+            if os.path.exists(model_match_csv):
+                continue
+            standing_list = LeagueMatch().leagueMatch(loadPlayerList(model_root))
+            outputModelMatchCsv(standing_list, model_match_csv)
+        except BaseException as e:
+            print('model error', e)
 
     # モデル内の上位3人を取得
     player_list = []
     for model_root in args.model_root:
         model_match_csv = os.path.join(model_root, 'model_match.csv')
-        df = pd.read_csv(model_match_csv, index_col=0)
-        for name in df.nlargest(3, 'win_rate').index:
-            strategy = name[:name.find('_')]
-            ckpt_index = name[name.rfind('_') + 1:]
-            player_list += [loadPlayer(model_root,
-                                       os.path.join(model_root, ckpt_index), strategy)]
+        if os.path.exists(model_match_csv):
+            try:
+
+                df = pd.read_csv(model_match_csv, index_col=0)
+                for name in df.nlargest(3, 'win_rate').index:
+                    strategy = name[:name.find('_')]
+                    ckpt_index = name[name.rfind('_') + 1:]
+                    player_list += [loadPlayer(model_root,
+                                               os.path.join(model_root, ckpt_index), strategy)]
+            except BaseException as e:
+                print('load player error', model_root, e)
 
     player_list += [game.Player()]
-    standing_list = leagMatch(player_list)
+
+    league = LeagueMatch('result.csv')
+    standing_list = league.leagueMatch(player_list)
 
     for name, standing in sorted(standing_list.standing_list.items(), reverse=True,
                                  key=lambda x: x[1].win_rate):

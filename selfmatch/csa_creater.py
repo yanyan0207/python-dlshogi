@@ -30,6 +30,9 @@ def createKif(board: shogi.Board, ofile: str, gameResult: GameResult):
         piece = tmp_board.piece_type_at(move.to_square)
         lines += [f'{turn}{from_csa}{to_csa}{KOMA_LIST[piece]}']
         lines += ['T0']
+        board_str = tmp_board.kif_str()
+        for l in board_str.split('\n'):
+            lines += ["'" + l]
 
     if gameResult.reason == Reason.CHECK_MATE:
         lines += ['%TSUMI']

@@ -1,0 +1,8 @@
+version: "2.3"
+services:
+  base_v2:
+    stdin_open: true
+    tty: true
+    build:
+      context: ../
+      dockerfile: v2/Dockerfile
